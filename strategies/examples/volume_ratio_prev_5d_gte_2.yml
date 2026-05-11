@@ -1,0 +1,25 @@
+version: 1  # 策略配置版本；当前代码只支持 1。
+strategy:  # 策略元信息，只影响展示、加载校验和实验命名。
+  name: volume_ratio_prev_5d_gte_2  # 策略唯一名称，必须与文件名一致。
+  description: 今日成交量大于等于前 5 个交易日日均成交量 2 倍。  # 策略说明，方便区分策略思路。
+selection:  # 选股规则配置；决定每天哪些股票进入候选池。
+  type: rules  # 选股类型：rules=字段规则过滤；pattern_sql=内置形态 SQL。
+  logic: AND  # 多条 rules 的组合逻辑；当前代码支持 AND，表示全部条件都满足。
+  sort_by: volume_plus_prev_5d_sum  # 选股结果排序字段。 按当日成交量 + 前 5 日成交量总和排序。
+  sort_order: DESC  # 排序方向：ASC 升序，DESC 降序。
+  rules:  # 字段过滤规则列表；每个 - 代表一个条件。
+    - field: volume_ratio_prev_5d_avg  # 过滤字段：当日成交量 / 前 5 个交易日日均成交量，衡量相对放量。
+      operator: gte  # 大于等于。
+      value: 2  # 过滤阈值；会与 field 计算结果按 operator 比较。
+backtest_selection:  # 信号有效性回测默认值；不考虑资金占用，只看选股信号买卖收益。
+  holding_period: 2  # 选股后下个交易日开盘买入，并持有的交易日数。
+  selection_top_n: 10  # 每天按 selection 排序后只取前 N 只；null/缺省表示全取。
+strategy_backtest:  # 组合/资金回测默认值；考虑现金、仓位数量、买入批次和退出规则。
+  holding_period: 3  # 最大持有交易日数；达到后按收盘价退出。
+  max_positions: 5  # 最多同时持有的股票数量。
+  max_daily_buys: 2  # 单个交易日最多新买入的股票数量。
+  initial_capital: 100000  # 初始资金。
+  position_size_pct: 20  # 单只股票目标仓位占当前总资产的百分比。
+  take_profit_pct: 8  # 止盈阈值，收益率达到该百分比时卖出。
+  stop_loss_pct: -5  # 止损阈值，收益率低于该百分比时卖出；通常为负数。
+  selection_top_n: 10  # 每天按 selection 排序后，只允许前 N 只进入买入候选。

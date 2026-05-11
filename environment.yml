@@ -1,0 +1,20 @@
+name: quant-backtest
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pandas
+  - duckdb
+  - pyarrow
+  - jupyterlab
+  - matplotlib
+  - pip:
+      - httpx
+      - pydantic
+      - pyyaml
+      - typer
+      - pytest
+      - python-dotenv
+      - ruff

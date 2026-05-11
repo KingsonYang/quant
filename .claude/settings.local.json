@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec status:*)",
+      "Bash(duckdb data/quant.duckdb -noheader -list \"SELECT 'turnover_ratio sample', MIN\\(turnover_ratio\\), MAX\\(turnover_ratio\\), AVG\\(turnover_ratio\\) FROM daily_bar LIMIT 1;\")",
+      "Bash(duckdb data/quant.duckdb -noheader -list \"SELECT 'amount sample', MIN\\(amount\\), MAX\\(amount\\), AVG\\(amount\\) FROM \\(SELECT amount FROM daily_bar WHERE amount IS NOT NULL ORDER BY random\\(\\) LIMIT 100000\\);\")",
+      "Bash(duckdb:*)"
+    ]
+  }
+}
