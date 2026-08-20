@@ -1,0 +1,59 @@
+version: 1
+strategy:
+  name: low_position_volume_breakout
+  display_name: 低位放量首阳突破
+  description: 低位横盘压缩后放量阳线突破平台，使用日线量价和均线评分排序。
+selection:
+  type: pattern_sql
+  pattern_id: low_position_volume_breakout_v1
+  sort_by: composite_score
+  sort_order: DESC
+  params:
+    low_position_window: 60
+    platform_window: 30
+    breakout_window: 20
+    volume_ratio_min: 1.8
+    amount_min_yi: 0.05
+    turnover_min: 0.5
+    turnover_max: 20.0
+    recent_10d_change_max: 25.0
+    max_close_position_pct: 65.0
+    platform_amplitude_max_pct: 35.0
+    min_breakout_pct: 0.0
+    max_breakout_pct: 12.0
+backtest_selection:
+  holding_period: 3
+  selection_top_n: 5
+strategy_backtest:
+  holding_period: 3
+  max_positions: 1
+  max_daily_buys: 1
+  initial_capital: 1000000
+  position_size_pct: 100
+  take_profit_pct: 10
+  stop_loss_pct: -5
+  selection_top_n: 1
+  min_composite_score: 70
+  min_score_gap: 3
+optimization:
+  enabled: true
+  search_space:
+    backtest_selection.holding_period: [1, 2, 3, 5]
+    backtest_selection.selection_top_n: [1, 2, 3, 5, 10]
+    strategy_backtest.holding_period: [1, 2, 3, 5]
+    strategy_backtest.take_profit_pct: [6, 8, 10, 15]
+    strategy_backtest.stop_loss_pct: [-8, -5, -3]
+    strategy_backtest.min_composite_score: [60, 70, 75, 80]
+    strategy_backtest.min_score_gap: [0, 3, 5]
+    selection.params.low_position_window: [40, 60, 80]
+    selection.params.platform_window: [20, 30, 40]
+    selection.params.breakout_window: [10, 20, 30]
+    selection.params.volume_ratio_min: [1.5, 1.8, 2.2, 2.8]
+    selection.params.recent_10d_change_max: [15.0, 20.0, 25.0, 35.0]
+    selection.params.turnover_min: [0.3, 0.5, 1.0]
+    selection.params.turnover_max: [15.0, 20.0, 30.0]
+    selection.params.amount_min_yi: [0.03, 0.05, 0.1]
+    selection.params.max_close_position_pct: [55.0, 65.0, 75.0]
+    selection.params.platform_amplitude_max_pct: [25.0, 35.0, 45.0]
+    selection.params.min_breakout_pct: [0.0, 1.0, 2.0]
+    selection.params.max_breakout_pct: [8.0, 12.0, 15.0]

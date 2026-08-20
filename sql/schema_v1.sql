@@ -1,4 +1,4 @@
-﻿-- quant schema v1
+-- quant schema v1
 -- DuckDB-oriented logical DDL for the first version of the A-share daily backtesting system.
 
 CREATE TABLE IF NOT EXISTS security_master (
@@ -81,10 +81,78 @@ CREATE TABLE IF NOT EXISTS daily_bar (
     ma5_volume BIGINT,
     ma10_volume BIGINT,
     ma20_volume BIGINT,
+    open_qfq DECIMAL(18,4),
+    high_qfq DECIMAL(18,4),
+    low_qfq DECIMAL(18,4),
+    close_qfq DECIMAL(18,4),
+    adjust_type VARCHAR DEFAULT 'none',
     source_name VARCHAR NOT NULL,
     parser_version VARCHAR,
     ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (security_id, trade_date),
+    FOREIGN KEY (security_id) REFERENCES security_master(security_id)
+);
+
+CREATE TABLE IF NOT EXISTS ths_daily_snapshot (
+    snapshot_id BIGINT PRIMARY KEY,
+    security_id BIGINT NOT NULL,
+    symbol VARCHAR NOT NULL,
+    name VARCHAR NOT NULL,
+    trade_date DATE NOT NULL,
+    source_file TEXT NOT NULL,
+    row_number INTEGER NOT NULL,
+    raw_payload_json TEXT NOT NULL,
+    current_price DECIMAL(18,4),
+    open_price DECIMAL(18,4),
+    high_price DECIMAL(18,4),
+    low_price DECIMAL(18,4),
+    pre_close_price DECIMAL(18,4),
+    change_amount DECIMAL(18,4),
+    change_pct DECIMAL(10,4),
+    volume BIGINT,
+    amount DECIMAL(20,2),
+    turnover_ratio DECIMAL(10,4),
+    volume_ratio DECIMAL(18,4),
+    total_market_cap DECIMAL(24,2),
+    float_market_cap DECIMAL(24,2),
+    float_market_cap_tagged DECIMAL(24,2),
+    float_ratio DECIMAL(10,4),
+    industry VARCHAR,
+    sub_industry VARCHAR,
+    concepts TEXT,
+    limit_type VARCHAR,
+    limit_reason TEXT,
+    first_limit_time VARCHAR,
+    last_limit_time VARCHAR,
+    limit_open_count INTEGER,
+    limit_seal_ratio DECIMAL(18,4),
+    limit_seal_amount DECIMAL(24,2),
+    limit_seal_amount_new DECIMAL(24,2),
+    limit_seal_volume_new BIGINT,
+    consecutive_limit_days INTEGER,
+    open_change_pct DECIMAL(10,4),
+    auction_turnover_ratio DECIMAL(10,4),
+    five_day_change_pct DECIMAL(10,4),
+    ten_day_change_pct DECIMAL(10,4),
+    twenty_day_change_pct DECIMAL(10,4),
+    amplitude_pct DECIMAL(10,4),
+    inner_volume BIGINT,
+    outer_volume BIGINT,
+    inner_outer_ratio DECIMAL(18,4),
+    main_net_volume DECIMAL(18,4),
+    buy_volume BIGINT,
+    sell_volume BIGINT,
+    transaction_count BIGINT,
+    institutional_trend DECIMAL(18,4),
+    total_shares BIGINT,
+    float_shares BIGINT,
+    net_profit_growth_pct DECIMAL(18,4),
+    net_asset_per_share DECIMAL(18,4),
+    golden_cross_count INTEGER,
+    retail_holder_count DECIMAL(18,4),
+    list_date DATE,
+    ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(symbol, trade_date),
     FOREIGN KEY (security_id) REFERENCES security_master(security_id)
 );
 
@@ -223,3 +291,4 @@ CREATE TABLE IF NOT EXISTS equity_snapshot (
     UNIQUE(run_id, trade_date),
     FOREIGN KEY (run_id) REFERENCES backtest_run(run_id)
 );
+

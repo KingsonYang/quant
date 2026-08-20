@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -62,8 +62,13 @@ class DailyBarRecord:
     ma5_volume: int | None
     ma10_volume: int | None
     ma20_volume: int | None
-    source_name: str
-    parser_version: str
+    open_qfq: Decimal | None = None
+    high_qfq: Decimal | None = None
+    low_qfq: Decimal | None = None
+    close_qfq: Decimal | None = None
+    adjust_type: str = "none"
+    source_name: str = ""
+    parser_version: str = ""
 
 
 @dataclass(frozen=True)

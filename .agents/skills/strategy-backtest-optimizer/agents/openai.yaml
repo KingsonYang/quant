@@ -1,0 +1,5 @@
+interface:
+  display_name: "Strategy Backtest Optimizer"
+  short_description: "Standard strategy backtest workflow"
+  default_prompt: "Use $strategy-backtest-optimizer to evaluate and optimize this strategy."
+

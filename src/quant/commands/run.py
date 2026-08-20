@@ -88,8 +88,20 @@ def run_select_command(
         parts = [candidate.symbol, candidate.name]
         if candidate.d0_date is not None:
             parts.append(f"d0_date={candidate.d0_date}")
+        if candidate.branch_type is not None:
+            parts.append(f"branch={candidate.branch_type}")
+        if candidate.board_count is not None:
+            parts.append(f"boards={candidate.board_count}")
+        if candidate.first_limit_date is not None:
+            parts.append(f"first_limit={candidate.first_limit_date}")
+        if candidate.last_limit_date is not None:
+            parts.append(f"last_limit={candidate.last_limit_date}")
+        if candidate.false_break_occurred is not None:
+            parts.append(f"false_break={candidate.false_break_occurred}")
         if candidate.composite_score is not None:
             parts.append(f"score={candidate.composite_score:.2f}")
+        if candidate.pool_score_v3 is not None:
+            parts.append(f"v3={candidate.pool_score_v3:.4f}")
         typer.echo("\t".join(parts))
 
 
@@ -135,9 +147,8 @@ def run_backtest_selection_command(
     """Run selection backtest using a YAML strategy."""
     loaded = _load_run_strategy(strategy_name, strategies_dir)
     if loaded.config.backtest_selection is None:
-        raise typer.BadParameter(
-            f"does not define backtest_selection defaults. Strategy: {strategy_name}."
-        )
+        typer.echo(f"does not define backtest_selection defaults. Strategy: {strategy_name}.")
+        raise typer.Exit(1)
 
     try:
         report = run_loaded_strategy_selection_backtest(
@@ -207,9 +218,8 @@ def run_backtest_strategy_command(
     """Run strategy backtest using a YAML strategy."""
     loaded = _load_run_strategy(strategy_name, strategies_dir)
     if loaded.config.strategy_backtest is None:
-        raise typer.BadParameter(
-            f"does not define strategy_backtest defaults. Strategy: {strategy_name}."
-        )
+        typer.echo(f"does not define strategy_backtest defaults. Strategy: {strategy_name}.")
+        raise typer.Exit(1)
     try:
         report = run_loaded_strategy_backtest(
             db_path=db_path,

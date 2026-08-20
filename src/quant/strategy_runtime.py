@@ -18,6 +18,7 @@ from quant.backtest import (
 from quant.backtest_common import (
     connect,
     load_all_trade_dates,
+    load_low_price_cache,
     load_price_cache,
     load_trade_dates_in_range,
     quantize_pct,
@@ -25,6 +26,7 @@ from quant.backtest_common import (
 )
 from quant.config.loader import LoadedStrategyConfig
 from quant.config.models import PatternSelectionConfig, RulesSelectionConfig
+from quant.market_regime import load_market_regime_states
 from quant.pattern_selection import (
     PatternSelectionCandidate,
     PatternSelectionError,
@@ -58,6 +60,20 @@ class StrategySelectionCandidate:
     selection_date: date
     d0_date: date | None = None
     composite_score: float | None = None
+    branch_type: str | None = None
+    board_count: int | None = None
+    first_limit_date: date | None = None
+    first_limit_open: float | None = None
+    first_limit_close: float | None = None
+    last_limit_date: date | None = None
+    last_limit_open: float | None = None
+    last_limit_close: float | None = None
+    signal_open: float | None = None
+    signal_close: float | None = None
+    signal_ma5: float | None = None
+    false_break_occurred: bool | None = None
+    false_break_reclaim_days_actual: int | None = None
+    pool_score_v3: float | None = None
 
 
 @dataclass(frozen=True)
@@ -116,9 +132,23 @@ def _convert_pattern_candidates(
             selection_date=candidate.selection_date,
             d0_date=candidate.d0_date,
             composite_score=candidate.composite_score,
-        )
-        for candidate in candidates
-    ]
+            branch_type=candidate.branch_type,
+            board_count=candidate.board_count,
+            first_limit_date=candidate.first_limit_date,
+            first_limit_open=candidate.first_limit_open,
+            first_limit_close=candidate.first_limit_close,
+            last_limit_date=candidate.last_limit_date,
+            last_limit_open=candidate.last_limit_open,
+            last_limit_close=candidate.last_limit_close,
+            signal_open=candidate.signal_open,
+            signal_close=candidate.signal_close,
+            signal_ma5=candidate.signal_ma5,
+           false_break_occurred=candidate.false_break_occurred,
+           false_break_reclaim_days_actual=candidate.false_break_reclaim_days_actual,
+            pool_score_v3=candidate.pool_score_v3,
+       )
+       for candidate in candidates
+   ]
 
 
 def _select_candidates_with_connection(
@@ -191,6 +221,107 @@ def _select_candidates_in_range_with_connection(
             for trade_date, rows in grouped.items()
         }
     raise StrategyRuntimeError("Unsupported strategy selection configuration.")
+
+
+def _apply_strategy_score_gate(
+    candidates: list[StrategySelectionCandidate],
+    *,
+    min_composite_score: Decimal | None,
+    min_score_gap: Decimal | None,
+) -> list[StrategySelectionCandidate]:
+    if not candidates:
+        return candidates
+    if min_composite_score is None and min_score_gap is None:
+        return candidates
+
+    first = candidates[0]
+    if min_composite_score is not None:
+        if first.composite_score is None:
+            return []
+        if Decimal(str(first.composite_score)) < min_composite_score:
+            return []
+
+    if min_score_gap is not None and len(candidates) >= 2:
+        second = candidates[1]
+        if first.composite_score is None or second.composite_score is None:
+            return []
+        score_gap = Decimal(str(first.composite_score)) - Decimal(str(second.composite_score))
+        if score_gap < min_score_gap:
+            return []
+
+    return candidates
+
+
+def _build_recent_signal_filter_passes(
+    *,
+    selection_map: dict[date, list[StrategySelectionCandidate]],
+    trade_dates: list[date],
+    all_trade_dates: list[date],
+    trade_date_index: dict[date, int],
+    price_cache: dict[tuple[str, date], tuple[Decimal | None, Decimal | None]],
+    holding_period: int,
+    recent_signal_window: int,
+    recent_signal_min_count: int,
+    min_recent_signal_win_rate: Decimal | None,
+    min_recent_signal_avg_return: Decimal | None,
+) -> dict[date, bool]:
+    if min_recent_signal_win_rate is None and min_recent_signal_avg_return is None:
+        return {trade_date: True for trade_date in trade_dates}
+
+    outcomes: list[tuple[date, date, Decimal]] = []
+    for selection_date, candidates in selection_map.items():
+        selection_index = trade_date_index.get(selection_date)
+        if selection_index is None:
+            continue
+        buy_index = selection_index + 1
+        sell_index = buy_index + holding_period
+        if sell_index >= len(all_trade_dates):
+            continue
+        buy_date = all_trade_dates[buy_index]
+        sell_date = all_trade_dates[sell_index]
+        for candidate in candidates:
+            buy_price, _ = _lookup_price(price_cache, candidate.symbol, buy_date)
+            _, sell_price = _lookup_price(price_cache, candidate.symbol, sell_date)
+            if buy_price is None or sell_price is None or buy_price <= 0:
+                continue
+            return_pct = quantize_pct((sell_price - buy_price) * Decimal("100") / buy_price)
+            outcomes.append((sell_date, selection_date, return_pct))
+    outcomes.sort(key=lambda item: (item[0], item[1]))
+
+    passes: dict[date, bool] = {}
+    completed_returns: list[Decimal] = []
+    outcome_index = 0
+    for trade_date in trade_dates:
+        while outcome_index < len(outcomes) and outcomes[outcome_index][0] < trade_date:
+            completed_returns.append(outcomes[outcome_index][2])
+            outcome_index += 1
+
+        recent_returns = completed_returns[-recent_signal_window:]
+        if len(recent_returns) < recent_signal_min_count:
+            passes[trade_date] = True
+            continue
+
+        passed = True
+        if recent_returns:
+            win_rate = quantize_pct(
+                Decimal(sum(1 for value in recent_returns if value > 0))
+                * Decimal("100")
+                / Decimal(len(recent_returns))
+            )
+            avg_return = quantize_pct(
+                sum(recent_returns, start=Decimal("0")) / Decimal(len(recent_returns))
+            )
+        else:
+            win_rate = Decimal("0")
+            avg_return = Decimal("0")
+
+        if min_recent_signal_win_rate is not None and win_rate < min_recent_signal_win_rate:
+            passed = False
+        if min_recent_signal_avg_return is not None and avg_return < min_recent_signal_avg_return:
+            passed = False
+        passes[trade_date] = passed
+
+    return passes
 
 
 def run_strategy_selection(
@@ -559,6 +690,10 @@ def _validate_strategy_backtest_inputs(
         raise StrategyRuntimeError("stop_loss_pct must be less than 0.")
     if request.selection_top_n is not None and request.selection_top_n < 1:
         raise StrategyRuntimeError("selection_top_n must be at least 1 when provided.")
+    if request.min_composite_score is not None and request.min_composite_score < 0:
+        raise StrategyRuntimeError("min_composite_score must be non-negative when provided.")
+    if request.min_score_gap is not None and request.min_score_gap < 0:
+        raise StrategyRuntimeError("min_score_gap must be non-negative when provided.")
 
     validate_trade_date(connection, request.start_date, StrategyRuntimeError)
     validate_trade_date(connection, request.end_date, StrategyRuntimeError)
@@ -608,6 +743,10 @@ def _build_strategy_backtest_summary(
         selection_sort_by=request.selection_sort_by,
         selection_sort_order=request.selection_sort_order,
         selection_top_n=request.selection_top_n,
+        min_composite_score=request.min_composite_score,
+        min_score_gap=request.min_score_gap,
+        market_filter_enabled=request.market_filter_enabled,
+        intraday_stop_loss_enabled=request.intraday_stop_loss_enabled,
         max_positions=request.max_positions,
         max_daily_buys=request.max_daily_buys,
         initial_capital=_quantize_money(request.initial_capital),
@@ -661,6 +800,10 @@ def run_loaded_strategy_backtest(
         selection_sort_by=sort_by,
         selection_sort_order=sort_order,
         selection_top_n=defaults.selection_top_n,
+        min_composite_score=defaults.min_composite_score,
+        min_score_gap=defaults.min_score_gap,
+        market_filter_enabled=bool(defaults.market_filter and defaults.market_filter.enabled),
+        intraday_stop_loss_enabled=defaults.intraday_stop_loss_enabled,
     )
 
     with connect(db_path) as connection:
@@ -673,16 +816,21 @@ def run_loaded_strategy_backtest(
             end_date=request.end_date,
             loaded=loaded,
         )
-        selection_map: dict[date, list[StrategySelectionCandidate]] = {}
+        candidate_selection_map: dict[date, list[StrategySelectionCandidate]] = {}
         for selection_date, selection_results in raw_selection_map.items():
+            gated_results = _apply_strategy_score_gate(
+                selection_results,
+                min_composite_score=request.min_composite_score,
+                min_score_gap=request.min_score_gap,
+            )
             if request.selection_top_n is None:
-                selection_map[selection_date] = selection_results
+                candidate_selection_map[selection_date] = gated_results
             else:
-                selection_map[selection_date] = selection_results[: request.selection_top_n]
+                candidate_selection_map[selection_date] = gated_results[: request.selection_top_n]
 
         relevant_symbols = {
             candidate.symbol
-            for selection_results in selection_map.values()
+            for selection_results in candidate_selection_map.values()
             for candidate in selection_results
         }
         price_cache = load_price_cache(
@@ -691,6 +839,54 @@ def run_loaded_strategy_backtest(
             start_trade_date=trade_dates[0],
             end_trade_date=trade_dates[-1],
         )
+        low_price_cache = (
+            load_low_price_cache(
+                connection=connection,
+                symbols=relevant_symbols,
+                start_trade_date=trade_dates[0],
+                end_trade_date=trade_dates[-1],
+            )
+            if request.intraday_stop_loss_enabled
+            else {}
+        )
+        market_regime_states = (
+            load_market_regime_states(
+                connection,
+                start_date=request.start_date,
+                end_date=request.end_date,
+                config=defaults.market_filter,
+            )
+            if defaults.market_filter is not None and defaults.market_filter.enabled
+            else {}
+        )
+        recent_signal_passes = (
+            _build_recent_signal_filter_passes(
+                selection_map=candidate_selection_map,
+                trade_dates=trade_dates,
+                all_trade_dates=all_trade_dates,
+                trade_date_index=trade_date_index,
+                price_cache=price_cache,
+                holding_period=request.holding_period,
+                recent_signal_window=defaults.market_filter.recent_signal_window,
+                recent_signal_min_count=defaults.market_filter.recent_signal_min_count,
+                min_recent_signal_win_rate=defaults.market_filter.min_recent_signal_win_rate,
+                min_recent_signal_avg_return=defaults.market_filter.min_recent_signal_avg_return,
+            )
+            if defaults.market_filter is not None and defaults.market_filter.enabled
+            else {}
+        )
+        selection_map: dict[date, list[StrategySelectionCandidate]] = {}
+        for selection_date, candidates in candidate_selection_map.items():
+            if market_regime_states and not market_regime_states.get(selection_date, None):
+                selection_map[selection_date] = []
+                continue
+            if market_regime_states and not market_regime_states[selection_date].passed:
+                selection_map[selection_date] = []
+                continue
+            if recent_signal_passes and not recent_signal_passes.get(selection_date, True):
+                selection_map[selection_date] = []
+                continue
+            selection_map[selection_date] = candidates
 
         cash = request.initial_capital
         open_positions: list[_OpenPosition] = []
@@ -719,6 +915,8 @@ def run_loaded_strategy_backtest(
                     remaining_positions.append(position)
                     continue
 
+                open_price, _ = _lookup_price(price_cache, position.symbol, current_date)
+
                 holding_days = current_trade_index - position.buy_trade_index
                 sell_amount = close_price * Decimal(position.shares)
                 return_pct = quantize_pct(
@@ -726,7 +924,36 @@ def run_loaded_strategy_backtest(
                 )
 
                 exit_reason: str | None = None
-                if return_pct >= request.take_profit_pct:
+                effective_sell_price = close_price
+                effective_return_pct = return_pct
+
+                intraday_stop_triggered = False
+                if request.intraday_stop_loss_enabled:
+                    low_price = low_price_cache.get((position.symbol, current_date))
+                    if low_price is not None and position.buy_price > 0:
+                        low_return_pct = (
+                            (low_price - position.buy_price) * Decimal("100") / position.buy_price
+                        )
+                        if low_return_pct <= request.stop_loss_pct:
+                            intraday_stop_triggered = True
+
+                if intraday_stop_triggered:
+                    # Conservative fill: the stop-loss threshold price, but if the day
+                    # gapped below it (open < threshold) fill at the worse open price.
+                    # Never assume a fill better than reality -> avoids backtest inflation.
+                    stop_multiplier = Decimal("1") + request.stop_loss_pct / Decimal("100")
+                    threshold_price = position.buy_price * stop_multiplier
+                    if open_price is not None and open_price < threshold_price:
+                        effective_sell_price = open_price
+                    else:
+                        effective_sell_price = threshold_price
+                    effective_return_pct = quantize_pct(
+                        (effective_sell_price - position.buy_price)
+                        * Decimal("100")
+                        / position.buy_price
+                    )
+                    exit_reason = "intraday_stop_loss"
+                elif return_pct >= request.take_profit_pct:
                     exit_reason = "take_profit"
                 elif return_pct <= request.stop_loss_pct:
                     exit_reason = "stop_loss"
@@ -737,6 +964,7 @@ def run_loaded_strategy_backtest(
                     remaining_positions.append(position)
                     continue
 
+                sell_amount = effective_sell_price * Decimal(position.shares)
                 cash += sell_amount
                 trades.append(
                     StrategyBacktestTrade(
@@ -746,13 +974,13 @@ def run_loaded_strategy_backtest(
                         buy_date=position.buy_date,
                         sell_date=current_date,
                         buy_price=position.buy_price,
-                        sell_price=close_price,
+                        sell_price=effective_sell_price,
                         shares=position.shares,
                         lots=position.shares // 100,
                         buy_amount=_quantize_money(position.buy_amount),
                         sell_amount=_quantize_money(sell_amount),
                         holding_days=holding_days,
-                        return_pct=return_pct,
+                        return_pct=effective_return_pct,
                         status="closed",
                         exit_reason=exit_reason,
                     )

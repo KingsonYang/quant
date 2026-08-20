@@ -20,7 +20,7 @@ selection:  # 选股规则配置；决定每天哪些股票进入候选池。
     support_low_tolerance_pct: 6.0  # 普通回踩分支中，回调最低价最多允许低于 T0 低点的百分比。
     close_support_tolerance_pct: 2.5  # 普通回踩分支中，回调最低收盘价最多允许低于 T0 低点的百分比。
     must_touch_low_zone_pct: 8.0  # 回调最低价必须进入 T0 低点上方该百分比以内，确保真的回踩到位。
-    pullback_avg_volume_max_ratio: 1.0  # 回调期平均成交量 / T0 成交量的上限；越低越强调缩量。
+    pullback_avg_volume_max_ratio: 1.8  # 回调期平均成交量 / T0 成交量的上限；越低越强调缩量。
     pullback_max_daily_change_pct: 9.0  # 回调期单日最大涨幅上限，防止中途再次大涨。
     pullback_min_daily_change_pct: -6.0  # 回调期单日最小涨跌幅下限，防止单日跌幅过深。
     recent_ma5_touch_tolerance_pct: 1.0  # 信号日前近 3 个交易日触碰五日线的容忍度。
@@ -54,6 +54,8 @@ strategy_backtest:  # 组合/资金回测默认值；考虑现金、仓位数量
   take_profit_pct: 20  # 止盈阈值，收益率达到该百分比时卖出。
   stop_loss_pct: -5  # 止损阈值，收益率低于该百分比时卖出；通常为负数。
   selection_top_n: 1  # 每天按 selection 排序后，只允许前 N 只进入买入候选。
+  min_composite_score: 70  # 组合回测评分门槛；低于该综合评分时当天不买入。
+  min_score_gap: 3  # 组合回测评分分差门槛；第一名需至少领先第二名该分数。
 optimization:  # 参数优化配置；quant optimize 会读取这里的候选参数。
   enabled: true  # 是否启用该策略的参数搜索配置。
   search_space:  # 搜索空间；key 是参数路径，value 是候选值列表。
@@ -61,6 +63,8 @@ optimization:  # 参数优化配置；quant optimize 会读取这里的候选参
     strategy_backtest.holding_period: [2, 3, 5]  # 调参候选：组合回测最大持有交易日数。
     strategy_backtest.take_profit_pct: [10, 15, 20]  # 调参候选：止盈百分比。
     strategy_backtest.stop_loss_pct: [-8, -5, -3]  # 调参候选：止损百分比。
+    strategy_backtest.min_composite_score: [60, 65, 70, 75, 80]  # 调参候选：组合回测评分门槛。
+    strategy_backtest.min_score_gap: [0, 3, 5, 8]  # 调参候选：第一名相对第二名的最低评分优势。
     selection.params.limit_up_volume_multiple: [1.0, 1.2, 1.5, 2.0]  # 调参候选：T0 成交量相对前 5 日均量的最低倍数。
     selection.params.pullback_max_trade_days: [10, 15, 20]  # 调参候选：T0 后到信号日前，最多允许的回调交易日数。
     selection.params.support_low_tolerance_pct: [3.0, 5.0, 6.0, 8.0]  # 调参候选：普通回踩分支中，回调最低价最多允许低于 T0 低点的百分比。

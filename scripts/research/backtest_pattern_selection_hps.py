@@ -74,6 +74,41 @@ def _pct(buy: Decimal, sell: Decimal) -> Decimal:
     return quantize_pct((sell - buy) * Decimal("100") / buy)
 
 
+# 买入时可观测特征 (selection_date 当天算出, 无未来函数), 供选股池排序研究
+FEATURE_COLUMNS = [
+    "f_signal_change",
+    "f_signal_turnover",
+    "f_signal_vol_ratio_prev5",
+    "f_signal_vol_vs_prev1",
+    "f_d0_vol_ratio_prev5",
+    "f_signal_vs_d0_close_pct",
+    "f_platform_min_low_vs_d0_low_pct",
+    "f_platform_avg_vol_vs_d0",
+    "f_platform_weak_day_ratio",
+    "f_between_days",
+    "composite_score",
+]
+
+
+def _feat(candidate: PatternSelectionCandidate) -> list[str]:
+    def s(v: object) -> str:
+        return "" if v is None else str(v)
+
+    return [
+        s(candidate.f_signal_change),
+        s(candidate.f_signal_turnover),
+        s(candidate.f_signal_vol_ratio_prev5),
+        s(candidate.f_signal_vol_vs_prev1),
+        s(candidate.f_d0_vol_ratio_prev5),
+        s(candidate.f_signal_vs_d0_close_pct),
+        s(candidate.f_platform_min_low_vs_d0_low_pct),
+        s(candidate.f_platform_avg_vol_vs_d0),
+        s(candidate.f_platform_weak_day_ratio),
+        s(candidate.f_between_days),
+        s(candidate.composite_score),
+    ]
+
+
 def _strategy_candidates_in_range(
     connection,
     start_date: date,
@@ -162,6 +197,7 @@ def run_backtest(
                         "status",
                         "incomplete_reason",
                     ]
+                    + FEATURE_COLUMNS
                 )
 
                 for sel_date, rows in selection_map.items():
@@ -189,6 +225,7 @@ def run_backtest(
                                     "incomplete",
                                     "missing_next_trade_date",
                                 ]
+                                + _feat(candidate)
                             )
                             continue
 
@@ -209,6 +246,7 @@ def run_backtest(
                                     "incomplete",
                                     "missing_buy_bar",
                                 ]
+                                + _feat(candidate)
                             )
                             continue
 
@@ -228,6 +266,7 @@ def run_backtest(
                                     "incomplete",
                                     "insufficient_holding_window",
                                 ]
+                                + _feat(candidate)
                             )
                             continue
 
@@ -248,6 +287,7 @@ def run_backtest(
                                     "incomplete",
                                     "missing_sell_bar",
                                 ]
+                                + _feat(candidate)
                             )
                             continue
 
@@ -268,6 +308,7 @@ def run_backtest(
                                 "completed",
                                 "",
                             ]
+                            + _feat(candidate)
                         )
 
             avg_ret = None

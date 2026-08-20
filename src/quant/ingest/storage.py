@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -192,6 +192,11 @@ class DuckDBIngestionStore:
                 bar.ma5_volume,
                 bar.ma10_volume,
                 bar.ma20_volume,
+                bar.open_qfq,
+                bar.high_qfq,
+                bar.low_qfq,
+                bar.close_qfq,
+                bar.adjust_type,
                 bar.source_name,
                 bar.parser_version,
                 ingested_at,
@@ -204,10 +209,11 @@ class DuckDBIngestionStore:
                 security_id, trade_date, ts_epoch, open_price, high_price, low_price,
                 close_price, pre_close_price, volume, amount, change_amount,
                 change_pct, turnover_ratio, ma5_price, ma10_price, ma20_price,
-                ma5_volume, ma10_volume, ma20_volume, source_name, parser_version,
-                ingested_at
+                ma5_volume, ma10_volume, ma20_volume,
+                open_qfq, high_qfq, low_qfq, close_qfq, adjust_type,
+                source_name, parser_version, ingested_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             params,
         )
@@ -256,6 +262,11 @@ class DuckDBIngestionStore:
                 bar.ma5_volume,
                 bar.ma10_volume,
                 bar.ma20_volume,
+                bar.open_qfq,
+                bar.high_qfq,
+                bar.low_qfq,
+                bar.close_qfq,
+                bar.adjust_type,
                 bar.source_name,
                 bar.parser_version,
                 ingested_at,
@@ -268,10 +279,11 @@ class DuckDBIngestionStore:
                 security_id, trade_date, ts_epoch, open_price, high_price, low_price,
                 close_price, pre_close_price, volume, amount, change_amount,
                 change_pct, turnover_ratio, ma5_price, ma10_price, ma20_price,
-                ma5_volume, ma10_volume, ma20_volume, source_name, parser_version,
-                ingested_at
+                ma5_volume, ma10_volume, ma20_volume,
+                open_qfq, high_qfq, low_qfq, close_qfq, adjust_type,
+                source_name, parser_version, ingested_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             params,
         )
@@ -306,6 +318,11 @@ class DuckDBIngestionStore:
                 bar.ma5_volume,
                 bar.ma10_volume,
                 bar.ma20_volume,
+                bar.open_qfq,
+                bar.high_qfq,
+                bar.low_qfq,
+                bar.close_qfq,
+                bar.adjust_type,
                 bar.source_name,
                 bar.parser_version,
                 ingested_at,
@@ -318,10 +335,11 @@ class DuckDBIngestionStore:
                 security_id, trade_date, ts_epoch, open_price, high_price, low_price,
                 close_price, pre_close_price, volume, amount, change_amount,
                 change_pct, turnover_ratio, ma5_price, ma10_price, ma20_price,
-                ma5_volume, ma10_volume, ma20_volume, source_name, parser_version,
-                ingested_at
+                ma5_volume, ma10_volume, ma20_volume,
+                open_qfq, high_qfq, low_qfq, close_qfq, adjust_type,
+                source_name, parser_version, ingested_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             params,
         )

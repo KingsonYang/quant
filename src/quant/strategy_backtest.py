@@ -44,6 +44,10 @@ class StrategyBacktestRequest:
     selection_sort_by: str = "symbol"
     selection_sort_order: str = "ASC"
     selection_top_n: int | None = None
+    min_composite_score: Decimal | None = None
+    min_score_gap: Decimal | None = None
+    market_filter_enabled: bool = False
+    intraday_stop_loss_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,8 @@ class StrategyBacktestSummary:
     selection_sort_by: str
     selection_sort_order: str
     selection_top_n: int | None
+    min_composite_score: Decimal | None
+    min_score_gap: Decimal | None
     max_positions: int
     max_daily_buys: int
     initial_capital: Decimal
@@ -92,6 +98,8 @@ class StrategyBacktestSummary:
     total_return_pct: Decimal
     annualized_return_pct: Decimal | None
     transaction_costs_included: bool
+    market_filter_enabled: bool = False
+    intraday_stop_loss_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -157,6 +165,10 @@ def _validate_request(
         raise StrategyBacktestError("stop_loss_pct must be less than 0.")
     if request.selection_top_n is not None and request.selection_top_n < 1:
         raise StrategyBacktestError("selection_top_n must be at least 1 when provided.")
+    if request.min_composite_score is not None and request.min_composite_score < 0:
+        raise StrategyBacktestError("min_composite_score must be non-negative when provided.")
+    if request.min_score_gap is not None and request.min_score_gap < 0:
+        raise StrategyBacktestError("min_score_gap must be non-negative when provided.")
 
     validate_trade_date(connection, request.start_date, StrategyBacktestError)
     validate_trade_date(connection, request.end_date, StrategyBacktestError)
@@ -238,6 +250,9 @@ def _build_summary(
         selection_sort_by=request.selection_sort_by,
         selection_sort_order=request.selection_sort_order,
         selection_top_n=request.selection_top_n,
+        min_composite_score=request.min_composite_score,
+        min_score_gap=request.min_score_gap,
+        market_filter_enabled=request.market_filter_enabled,
         max_positions=request.max_positions,
         max_daily_buys=request.max_daily_buys,
         initial_capital=_quantize_money(request.initial_capital),

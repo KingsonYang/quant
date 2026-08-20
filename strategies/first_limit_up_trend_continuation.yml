@@ -1,0 +1,72 @@
+version: 1
+strategy:
+  name: first_limit_up_trend_continuation
+  display_name: 首板趋势延续接力
+  description: 首板涨停当天作为信号日，按趋势、量能、突破、预热和换手评分，研究之后 1-5 日的短线延续冲高。
+selection:
+  type: pattern_sql
+  pattern_id: first_limit_up_trend_continuation_v1
+  sort_by: composite_score
+  sort_order: DESC
+  params:
+    limit_up_min_pct: 9.5
+    limit_up_close_high_min_ratio: 0.95  # 老板"老板"修复：0.995→0.95（A 股涨停常炸板再封板，0.995 太严，过滤掉 49 只）
+    volume_ratio_prev5_min: 0.2
+    volume_ratio_prev5_max: 4.0
+    turnover_min: 0.5
+    turnover_max: 60.0
+    amount_min_yi: 0.05
+    require_first_board: true
+    require_break_prev20_high: false
+    require_ma_bull_stack: false
+    prev10_change_sum_min: -20.0
+    prev10_change_sum_max: 80.0
+backtest_selection:
+  holding_period: 1
+  selection_top_n: 5
+strategy_backtest:
+  holding_period: 2
+  max_positions: 1
+  max_daily_buys: 1
+  initial_capital: 10000000
+  position_size_pct: 100
+  take_profit_pct: 10
+  stop_loss_pct: -5
+  selection_top_n: 1
+  min_composite_score: 80
+  min_score_gap: 3
+  market_filter:
+    enabled: false
+    lookback_days: 20
+    min_first_limit_count_avg: 25
+    min_up_ratio: 45
+    min_above_ma5_ratio: 40
+    max_down_gt5_count: 350
+    max_limit_down_count: 40
+    recent_signal_window: 20
+    recent_signal_min_count: 20
+    min_recent_signal_avg_return: 0
+    min_recent_signal_win_rate: 45
+optimization:
+  enabled: true
+  search_space:
+    backtest_selection.holding_period: [1, 2, 3, 4, 5]
+    backtest_selection.selection_top_n: [1, 2, 3, 5, 10]
+    strategy_backtest.holding_period: [1, 2, 3, 4, 5]
+    strategy_backtest.take_profit_pct: [6, 8, 10, 15]
+    strategy_backtest.stop_loss_pct: [-8, -5, -3]
+    strategy_backtest.selection_top_n: [1, 2, 3, 5]
+    strategy_backtest.min_composite_score: [60, 70, 75, 80, 85]
+    strategy_backtest.min_score_gap: [0, 3, 5, 8, 10]
+    strategy_backtest.market_filter.min_first_limit_count_avg: [20, 25, 30, 35]
+    strategy_backtest.market_filter.min_up_ratio: [40, 45, 50]
+    strategy_backtest.market_filter.min_above_ma5_ratio: [35, 40, 45, 50]
+    strategy_backtest.market_filter.max_down_gt5_count: [300, 350, 500]
+    strategy_backtest.market_filter.max_limit_down_count: [30, 40, 60]
+    strategy_backtest.market_filter.min_recent_signal_avg_return: [0, 0.5]
+    strategy_backtest.market_filter.min_recent_signal_win_rate: [40, 45, 50]
+    selection.params.volume_ratio_prev5_max: [1.5, 2.0, 2.5, 4.0]
+    selection.params.require_break_prev20_high: [true, false]
+    selection.params.require_ma_bull_stack: [true, false]
+    selection.params.prev10_change_sum_min: [-10.0, 0.0, 3.0]
+    selection.params.prev10_change_sum_max: [30.0, 50.0, 80.0]

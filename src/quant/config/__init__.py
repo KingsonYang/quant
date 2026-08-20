@@ -7,6 +7,7 @@ from .loader import (
 )
 from .models import (
     LimitUpPullbackMa5ReclaimParams,
+    MainForceAccumulationParams,
     OptimizationConfig,
     PatternSelectionConfig,
     RulesSelectionConfig,
@@ -18,6 +19,7 @@ __all__ = [
     "DEFAULT_STRATEGIES_DIR",
     "LimitUpPullbackMa5ReclaimParams",
     "LoadedStrategyConfig",
+    "MainForceAccumulationParams",
     "OptimizationConfig",
     "PatternSelectionConfig",
     "RulesSelectionConfig",

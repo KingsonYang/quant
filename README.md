@@ -42,6 +42,19 @@ quant ingest-baidu-all-incremental
 quant build-trading-calendar-incremental
 ```
 
+TDXQuant 数据源（作为 baidu/ths 的补充，写入原表 daily_bar）：
+
+```powershell
+quant ingest-tdxquant                            # 增量最近 5 天（主板）
+quant ingest-tdxquant --start 2026-06-20 --end 2026-06-23
+quant ingest-tdxquant --stock 600000.SH --days 5
+quant ingest-tdxquant --test-only --stock 600000.SH
+```
+
+> TDXQuant 作为增量数据源，只对 baidu/ths 都没覆盖的日期写入，**不修改原表的 baidu/ths 数据**。
+> 数据源标识：`source_name='tdxquant'`，`parser_version='tdxquant-get-market-data-v1'`。
+> 单位与 baidu/ths 一致：volume=股 / amount=元（TDXQuant 万元已 ×10000）/ change_pct=% / turnover=%。
+
 查看策略：
 
 ```powershell

@@ -4,7 +4,19 @@
       "Bash(openspec status:*)",
       "Bash(duckdb data/quant.duckdb -noheader -list \"SELECT 'turnover_ratio sample', MIN\\(turnover_ratio\\), MAX\\(turnover_ratio\\), AVG\\(turnover_ratio\\) FROM daily_bar LIMIT 1;\")",
       "Bash(duckdb data/quant.duckdb -noheader -list \"SELECT 'amount sample', MIN\\(amount\\), MAX\\(amount\\), AVG\\(amount\\) FROM \\(SELECT amount FROM daily_bar WHERE amount IS NOT NULL ORDER BY random\\(\\) LIMIT 100000\\);\")",
-      "Bash(duckdb:*)"
+      "Bash(duckdb:*)",
+      "Bash(python -m quant validate first_limit_up_trend_continuation_opt__strategy_backtest__rank_1 --strategies-dir strategies/generated --target strategy_backtest --start-date 2018-01-02 --end-date 2020-12-31 --mode all --walk-folds 5 --max-perturbations 20 --seed 7)",
+      "Bash(python)",
+      "Bash(PYTHONIOENCODING=utf-8 python /tmp/fwd_test.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python /tmp/spot.py)",
+      "Bash(conda run *)",
+      "Bash(ls \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" && echo \"FOUND\")",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/sch.py)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/sch2.py)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/build_panel.py)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/an6_gap_regime.py)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/an7_stop.py)",
+      "Bash(PYTHONUTF8=1 PYTHONIOENCODING=utf-8 \"D:/SoftWare/miniconda3/envs/quant-backtest/python.exe\" .tmp/an8_final.py)"
     ]
   }
 }

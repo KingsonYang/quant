@@ -5,4 +5,6 @@ Summary: A-share daily backtesting utilities.
 Requires-Python: >=3.12
 Requires-Dist: duckdb
 Requires-Dist: httpx
+Requires-Dist: pydantic
+Requires-Dist: PyYAML
 Requires-Dist: typer

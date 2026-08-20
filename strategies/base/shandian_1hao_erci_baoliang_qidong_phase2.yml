@@ -6,8 +6,8 @@ strategy:  # 策略元信息，只影响展示、加载校验和实验命名。
 selection:  # 选股规则配置；决定每天哪些股票进入候选池。
   type: pattern_sql  # 选股类型：rules=字段规则过滤；pattern_sql=内置形态 SQL。
   pattern_id: second_volume_launch_v1  # 二次爆量启动：D0 爆量阳线，平台整理不破低点，D1 再次放量启动。
-  sort_by: symbol  # 选股结果排序字段。 按股票代码排序。
-  sort_order: ASC  # 排序方向：ASC 升序，DESC 降序。
+  sort_by: composite_score  # 选股结果排序字段。 按股票代码排序。
+  sort_order: desc  # 排序方向：ASC 升序，DESC 降序。
   params:  # 模式参数；主要手动调试区域，直接影响形态宽严。
     lookback_calendar_days: 120  # 回看自然日窗口；越大允许匹配更早的启动日，但查询更慢。
     platform_max_trade_days: 30  # 二次爆量策略中，D0 到 D1 之间最多允许的平台整理交易日数。

@@ -109,3 +109,31 @@ def load_price_cache(
         [*symbol_list, start_trade_date, end_trade_date],
     ).fetchall()
     return {(row[0], row[1]): (row[2], row[3]) for row in rows}
+
+
+def load_low_price_cache(
+    connection: duckdb.DuckDBPyConnection,
+    symbols: set[str],
+    start_trade_date: date,
+    end_trade_date: date,
+) -> dict[tuple[str, date], Decimal | None]:
+    if not symbols:
+        return {}
+
+    symbol_list = sorted(symbols)
+    placeholders = ", ".join("?" for _ in symbol_list)
+    rows = connection.execute(
+        f"""
+        SELECT
+            s.symbol,
+            d.trade_date,
+            d.low_price
+        FROM daily_bar AS d
+        JOIN security_master AS s
+            ON d.security_id = s.security_id
+        WHERE s.symbol IN ({placeholders})
+          AND d.trade_date BETWEEN ? AND ?
+        """,
+        [*symbol_list, start_trade_date, end_trade_date],
+    ).fetchall()
+    return {(row[0], row[1]): row[2] for row in rows}
