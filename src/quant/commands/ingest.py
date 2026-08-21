@@ -312,7 +312,19 @@ def register(app: typer.Typer) -> None:
         target_table: str = typer.Option(
             "daily_bar",
             "--target-table",
-            help='老板"老板"新增：写入目标表，默认 daily_bar；可指定临时表如 daily_bar_tdxquant_test 用于数据源对比。',
+            help='写入目标表，默认 daily_bar；可指定临时表用于数据源对比。',
+        ),
+        skip_hsl: bool = typer.Option(
+            False,
+            "--skip-hsl/--fetch-hsl",
+            help="Skip HSL (turnover rate) fetch for speed. Default: fetch (ingest is small range).",
+        ),
+        batch_size: int = typer.Option(
+            50,
+            "--batch-size",
+            min=1,
+            max=500,
+            help="Number of stocks per batch API call. Default: 50.",
         ),
     ) -> None:
         """Incremental ingest from TDXQuant; writes back to daily_bar as a supplement to baidu/ths."""
@@ -337,6 +349,8 @@ def register(app: typer.Typer) -> None:
             stock=stock,
             only_main_board=not include_all,
             test_only=test_only,
+            skip_hsl=skip_hsl,
+            batch_size=batch_size,
         )
 
         typer.echo(f"TDXQuant range: {summary.start_date} ~ {summary.end_date}")
@@ -373,6 +387,18 @@ def register(app: typer.Typer) -> None:
             "--tqcenter-path",
             help="Explicit path to tqcenter.py.",
         ),
+        skip_hsl: bool = typer.Option(
+            True,
+            "--skip-hsl/--fetch-hsl",
+            help="Skip HSL (turnover rate) fetch during backfill for speed. Default: skip.",
+        ),
+        batch_size: int = typer.Option(
+            50,
+            "--batch-size",
+            min=1,
+            max=500,
+            help="Number of stocks per batch API call. Default: 50.",
+        ),
     ) -> None:
         """Full backfill from TDXQuant: replaces ALL daily_bar data with unadjusted + QFQ prices."""
         summary = backfill_prices(
@@ -380,9 +406,31 @@ def register(app: typer.Typer) -> None:
             stock=stock,
             only_main_board=not include_all,
             tqcenter_path=tqcenter_path,
+            skip_hsl=skip_hsl,
+            batch_size=batch_size,
         )
         typer.echo(f"Backfill: {summary.stock_count} stocks processed")
         typer.echo(f"Fetched rows: {summary.fetched}")
         typer.echo(f"Inserted rows: {summary.inserted}")
         typer.echo(f"Skipped empty: {summary.skipped_empty}")
         typer.echo(f"Errors: {summary.errors}")
+
+    @app.command("compact-db")
+    def compact_db_command(
+        db_path: Path = typer.Option(
+            DEFAULT_DB_PATH,
+            "--db-path",
+            help="Target DuckDB file path.",
+        ),
+    ) -> None:
+        """Compact DuckDB file: reclaim disk space after DELETE (runs VACUUM)."""
+        import os
+        size_before = os.path.getsize(db_path)
+        typer.echo(f"File size before: {size_before / 1024 / 1024:.1f} MB")
+        conn = duckdb.connect(str(db_path))
+        typer.echo("Running VACUUM...")
+        conn.execute("VACUUM")
+        conn.close()
+        size_after = os.path.getsize(db_path)
+        typer.echo(f"File size after:  {size_after / 1024 / 1024:.1f} MB")
+        typer.echo(f"Reclaimed: {(size_before - size_after) / 1024 / 1024:.1f} MB")
