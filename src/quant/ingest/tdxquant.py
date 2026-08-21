@@ -31,6 +31,7 @@ from typing import List, Optional
 
 import duckdb
 import pandas as pd
+from tqdm import tqdm
 
 # 老板"老板"：TDXQuant 数据源标识
 SOURCE_NAME = "tdxquant"
@@ -456,9 +457,9 @@ class TdxQuantIngestionService:
         # 老板"老板"修复 Bug #1+2：必须拉 20 天历史才能算 MA5/10/20
         MA_HISTORY_DAYS = 30  # 多拉 30 天确保 MA20 完整
 
-        # 算实际拉取的日期范围（往前推 30 天）
+        # 实际拉取范围：用户 start_date 往前多拉 30 天确保 MA20 完整
         actual_end = pd.Timestamp(end_date)
-        actual_start = actual_end - pd.Timedelta(days=MA_HISTORY_DAYS)
+        actual_start = pd.Timestamp(start_date) - pd.Timedelta(days=MA_HISTORY_DAYS)
         actual_start_str = actual_start.strftime("%Y-%m-%d")
 
         if test_only:
@@ -467,15 +468,35 @@ class TdxQuantIngestionService:
                 if not stock:
                     return summary
                 # 测试模式：用扩展日期范围拉数据
-                df = self.fetch_history(stock, actual_start_str, end_date)
+                # 归一化 stock_code（与主流程一致）
+                if stock.startswith("SH"):
+                    stock_code = stock[2:] + ".SH"
+                elif stock.startswith("SZ"):
+                    stock_code = stock[2:] + ".SZ"
+                elif stock.startswith("BJ"):
+                    stock_code = stock[2:] + ".BJ"
+                else:
+                    stock_code = stock
+
+                df = self.fetch_history(stock_code, actual_start_str, end_date)
                 if df is None or df.empty:
                     return summary
                 df = self.calc_ma(df)
-                hsl_map = self.fetch_hsl(stock, start_date, end_date)
+                hsl_map = self.fetch_hsl(stock_code, start_date, end_date)
                 df["turnover_ratio"] = df["trade_date"].dt.date.map(hsl_map)
+
+                from quant.adjust import parse_divid_factors, apply_qfq
+                divid_df = self.fetch_divid_factors(stock_code)
+                if divid_df is not None and not divid_df.empty:
+                    events = parse_divid_factors(divid_df)
+                    df = apply_qfq(df, events)
+                else:
+                    for qc in ("open_qfq", "high_qfq", "low_qfq", "close_qfq"):
+                        df[qc] = df[qc.replace("_qfq", "_price")]
+
                 summary.fetched = len(df)
                 summary.stock_count = 1
-                print(f"📊 拉取历史范围: {actual_start_str} ~ {end_date}（含 {MA_HISTORY_DAYS} 天历史）")
+                print(f"[CHART] 拉取历史范围: {actual_start_str} ~ {end_date}（含 {MA_HISTORY_DAYS} 天历史）")
                 print(df.to_string(index=False))
                 return summary
             finally:
@@ -500,57 +521,235 @@ class TdxQuantIngestionService:
 
             summary.stock_count = len(pool)
 
-            # 按 batch 拉取
-            for batch_start in range(0, len(pool), BATCH_SIZE):
-                batch = pool.iloc[batch_start:batch_start + BATCH_SIZE]
-                for _, row in batch.iterrows():
-                    security_id = int(row["security_id"])
-                    symbol = row["symbol"]
-                    if symbol.startswith("SH"):
-                        stock_code = symbol[2:] + ".SH"
-                    elif symbol.startswith("SZ"):
-                        stock_code = symbol[2:] + ".SZ"
-                    elif symbol.startswith("BJ"):
-                        stock_code = symbol[2:] + ".BJ"
+            # 按 batch 拉取（带进度条）
+            pbar = tqdm(
+                pool.iterrows(),
+                total=len(pool),
+                desc="Ingest",
+                unit="stock",
+                ncols=100,
+            )
+            for _, row in pbar:
+                security_id = int(row["security_id"])
+                symbol = row["symbol"]
+                if symbol.startswith("SH"):
+                    stock_code = symbol[2:] + ".SH"
+                elif symbol.startswith("SZ"):
+                    stock_code = symbol[2:] + ".SZ"
+                elif symbol.startswith("BJ"):
+                    stock_code = symbol[2:] + ".BJ"
+                else:
+                    stock_code = symbol
+
+                try:
+                    # 老板"老板"修复 Bug #1+2：拉 actual_start_str ~ end_date
+                    df = self.fetch_history(stock_code, actual_start_str, end_date)
+                    if df is None or df.empty:
+                        summary.skipped_empty += 1
+                        continue
+
+                    summary.fetched += len(df)
+                    df = self.calc_ma(df)
+                    # 合并逐日真实换手率（HSL，只覆盖目标区间即可）
+                    hsl_map = self.fetch_hsl(stock_code, start_date, end_date)
+                    df["turnover_ratio"] = df["trade_date"].dt.date.map(hsl_map)
+
+                    # 前复权(QFQ)计算：拉全量分红事件 → 线性变换 A*price+B
+                    from quant.adjust import parse_divid_factors, apply_qfq
+                    divid_df = self.fetch_divid_factors(stock_code)
+                    if divid_df is not None and not divid_df.empty:
+                        events = parse_divid_factors(divid_df)
+                        df = apply_qfq(df, events)
+                        try:
+                            self.store_divid_events(security_id, stock_code)
+                        except Exception:
+                            pass
                     else:
-                        stock_code = symbol
+                        for qc in ("open_qfq", "high_qfq", "low_qfq", "close_qfq"):
+                            df[qc] = df[qc.replace("_qfq", "_price")]
 
-                    try:
-                        # 老板"老板"修复 Bug #1+2：拉 actual_start_str ~ end_date
-                        df = self.fetch_history(stock_code, actual_start_str, end_date)
-                        if df is None or df.empty:
-                            summary.skipped_empty += 1
-                            continue
+                    # 只保留用户请求的日期范围（多拉的 30 天历史仅用于 MA 计算）
+                    target_start = pd.Timestamp(start_date)
+                    target_end = pd.Timestamp(end_date)
+                    df_target = df[(df["trade_date"] >= target_start) & (df["trade_date"] <= target_end)]
 
-                        summary.fetched += len(df)
-                        df = self.calc_ma(df)
-                        # 合并逐日真实换手率（HSL，只覆盖目标区间即可）
-                        hsl_map = self.fetch_hsl(stock_code, start_date, end_date)
-                        df["turnover_ratio"] = df["trade_date"].dt.date.map(hsl_map)
-                        # 过滤回请求的日期范围
-                        df_target = df[df["trade_date"] >= actual_end - pd.Timedelta(days=MA_HISTORY_DAYS)]
-                        df_target = df_target[df_target["trade_date"] <= actual_end]
-                        # 进一步只保留用户请求的日期范围
-                        target_start = pd.Timestamp(start_date)
-                        target_end = pd.Timestamp(end_date)
-                        df_target = df_target[(df_target["trade_date"] >= target_start) & (df_target["trade_date"] <= target_end)]
+                    if df_target.empty:
+                        continue
 
-                        if df_target.empty:
-                            continue
+                    inserted = self.upsert_daily_bar(df_target, security_id)
+                    summary.inserted += inserted
+                    summary.skipped_existing += len(df_target) - inserted
+                except Exception as e:
+                    summary.errors += 1
+                    if summary.errors <= 3:
+                        tqdm.write(f"[ERR] {symbol}: {type(e).__name__}: {e}")
 
-                        inserted = self.upsert_daily_bar(df_target, security_id)
-                        summary.inserted += inserted
-                        summary.skipped_existing += len(df_target) - inserted
-                    except Exception as e:
-                        summary.errors += 1
-                        # 老板"老板"调试：打印前 3 只错误
-                        if summary.errors <= 3:
-                            print(f"❌ Error for {symbol}: {type(e).__name__}: {e}")
+                pbar.set_postfix(
+                    fetched=summary.fetched,
+                    inserted=summary.inserted,
+                    errs=summary.errors,
+                )
 
+            pbar.close()
             return summary
         finally:
             self.close_tdxquant()
             self.close_db()
+
+    # ============== 8. 全量回填（替换 baidu/ths 数据） ==============
+    def backfill(
+        self,
+        stock: Optional[str] = None,
+        only_main_board: bool = True,
+    ) -> TdxQuantIngestionSummary:
+        """Full backfill: replace ALL daily_bar data with TDXQuant unadjusted + QFQ."""
+        summary = TdxQuantIngestionSummary(
+            fetched=0, inserted=0, skipped_existing=0,
+            skipped_empty=0, errors=0,
+            start_date="full_history", end_date="today", stock_count=0,
+        )
+
+        self.init_tdxquant()
+        self.connect_db()
+        try:
+            if stock:
+                security_id = self.get_symbol_security_id(stock)
+                if security_id is None:
+                    return summary
+                pool = pd.DataFrame([{"security_id": security_id, "symbol": stock}])
+            else:
+                pool = self.get_stock_pool(only_main_board=only_main_board)
+                if pool.empty:
+                    return summary
+
+            summary.stock_count = len(pool)
+            end_date = datetime.now().strftime("%Y-%m-%d")
+            start_date = "1990-01-01"
+
+            pbar = tqdm(
+                pool.iterrows(),
+                total=len(pool),
+                desc="Backfill",
+                unit="stock",
+                ncols=100,
+            )
+            for _, row in pbar:
+                security_id = int(row["security_id"])
+                symbol = row["symbol"]
+                if symbol.startswith("SH"):
+                    stock_code = symbol[2:] + ".SH"
+                elif symbol.startswith("SZ"):
+                    stock_code = symbol[2:] + ".SZ"
+                elif symbol.startswith("BJ"):
+                    stock_code = symbol[2:] + ".BJ"
+                else:
+                    stock_code = symbol
+
+                try:
+                    df = self.fetch_history(stock_code, start_date, end_date)
+                    if df is None or df.empty:
+                        summary.skipped_empty += 1
+                        continue
+
+                    summary.fetched += len(df)
+                    df = self.calc_ma(df)
+
+                    hsl_map = self.fetch_hsl(stock_code, start_date, end_date)
+                    df["turnover_ratio"] = df["trade_date"].dt.date.map(hsl_map)
+
+                    from quant.adjust import parse_divid_factors, apply_qfq
+                    divid_df = self.fetch_divid_factors(stock_code)
+                    if divid_df is not None and not divid_df.empty:
+                        events = parse_divid_factors(divid_df)
+                        df = apply_qfq(df, events)
+                        try:
+                            self.store_divid_events(security_id, stock_code)
+                        except Exception:
+                            pass
+                    else:
+                        for qc in ("open_qfq", "high_qfq", "low_qfq", "close_qfq"):
+                            df[qc] = df[qc.replace("_qfq", "_price")]
+
+                    inserted = self._backfill_daily_bar(df, security_id)
+                    summary.inserted += inserted
+                except Exception as e:
+                    summary.errors += 1
+                    if summary.errors <= 3:
+                        tqdm.write(f"[ERR] {symbol}: {type(e).__name__}: {e}")
+
+                pbar.set_postfix(
+                    fetched=summary.fetched,
+                    inserted=summary.inserted,
+                    errs=summary.errors,
+                )
+
+            pbar.close()
+            return summary
+        finally:
+            self.close_tdxquant()
+            self.close_db()
+
+    def _backfill_daily_bar(self, df: pd.DataFrame, security_id: int) -> int:
+        """Delete ALL existing rows for this stock, then insert new data."""
+        if df.empty:
+            return 0
+
+        self.conn.execute(
+            f"DELETE FROM {self.target_table} WHERE security_id = ?",
+            [security_id],
+        )
+
+        rows = []
+        for _, r in df.iterrows():
+            trade_date = pd.Timestamp(r["trade_date"])
+            ts_epoch = int(trade_date.timestamp())
+            pre_close = r.get("pre_close_price")
+            pre_close = float(pre_close) if pre_close is not None and not pd.isna(pre_close) else None
+            row = (
+                security_id,
+                trade_date.date(),
+                ts_epoch,
+                float(r["open_price"]),
+                float(r["high_price"]),
+                float(r["low_price"]),
+                float(r["close_price"]),
+                pre_close,
+                int(r.get("volume", 0)),
+                float(r.get("amount", 0)),
+                float(r["change_amount"]) if not pd.isna(r.get("change_amount")) else None,
+                float(r["change_pct"]) if not pd.isna(r.get("change_pct")) else None,
+                float(r["turnover_ratio"]) if not pd.isna(r.get("turnover_ratio")) else None,
+                float(r["ma5_price"]) if not pd.isna(r.get("ma5_price")) else None,
+                float(r["ma10_price"]) if not pd.isna(r.get("ma10_price")) else None,
+                float(r["ma20_price"]) if not pd.isna(r.get("ma20_price")) else None,
+                int(r["ma5_volume"]) if not pd.isna(r.get("ma5_volume")) else None,
+                int(r["ma10_volume"]) if not pd.isna(r.get("ma10_volume")) else None,
+                int(r["ma20_volume"]) if not pd.isna(r.get("ma20_volume")) else None,
+                float(r["open_qfq"]) if not pd.isna(r.get("open_qfq")) else None,
+                float(r["high_qfq"]) if not pd.isna(r.get("high_qfq")) else None,
+                float(r["low_qfq"]) if not pd.isna(r.get("low_qfq")) else None,
+                float(r["close_qfq"]) if not pd.isna(r.get("close_qfq")) else None,
+                "none",
+                SOURCE_NAME,
+                PARSER_VERSION,
+                datetime.now(),
+            )
+            rows.append(row)
+
+        insert_sql = f"""
+            INSERT INTO {self.target_table} (
+                security_id, trade_date, ts_epoch,
+                open_price, high_price, low_price, close_price, pre_close_price,
+                volume, amount, change_amount, change_pct, turnover_ratio,
+                ma5_price, ma10_price, ma20_price,
+                ma5_volume, ma10_volume, ma20_volume,
+                open_qfq, high_qfq, low_qfq, close_qfq, adjust_type,
+                source_name, parser_version, ingested_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        self.conn.executemany(insert_sql, rows)
+        self.conn.commit()
+        return len(rows)
 
 
 def ingest_tdxquant(
@@ -570,3 +769,18 @@ def ingest_tdxquant(
         only_main_board=only_main_board,
         test_only=test_only,
     )
+
+
+def backfill_prices(
+    db_path: Path = DEFAULT_DB_PATH,
+    stock: Optional[str] = None,
+    only_main_board: bool = True,
+    tqcenter_path: Path = DEFAULT_TQCENTER_PATH,
+) -> TdxQuantIngestionSummary:
+    """Backfill daily_bar with TDXQuant unadjusted prices + computed QFQ columns.
+
+    Deletes ALL existing rows for each stock (including baidu/ths) and replaces
+    them with TDXQuant unadjusted OHLC + front-adjusted (QFQ) OHLC.
+    """
+    service = TdxQuantIngestionService(db_path=db_path, tqcenter_path=tqcenter_path)
+    return service.backfill(stock=stock, only_main_board=only_main_board)

@@ -109,20 +109,20 @@ def compute_qfq_params_for_all_dates(
         a = a / m
         b = b - a * c
 
-    # Position to the last event with ex_date > latest trade date.
+    # Position to the last unapplied event (ex_date <= latest trade date).
     event_idx = len(sorted_events) - 1
-    while event_idx >= 0 and sorted_events[event_idx].ex_date <= sorted_dates[-1]:
+    while event_idx >= 0 and sorted_events[event_idx].ex_date > sorted_dates[-1]:
         event_idx -= 1
 
-    # Walk backwards, un-applying events as we cross their ex_date.
+    # Walk backwards, applying events as we cross their ex_date.
     for d in reversed(sorted_dates):
         while event_idx >= 0 and sorted_events[event_idx].ex_date > d:
             ev = sorted_events[event_idx]
             m = (10.0 + ev.share_bonus + ev.allotment) / 10.0
             c = (ev.bonus - ev.allotment * ev.allot_price) / 10.0
-            # Reverse: B_old = B_new + A_new * c; A_old = A_new * m
-            b = b + a * c
-            a = a * m
+            # Apply forward transform (same direction as initial loop)
+            a = a / m
+            b = b - a * c
             event_idx -= 1
         result[d] = (a, b)
 

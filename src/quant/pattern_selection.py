@@ -85,7 +85,10 @@ PATTERN_SQL_TEMPLATE = """
 WITH bars AS (
   SELECT
     d.security_id, d.trade_date,
-    d.open_price, d.high_price, d.low_price, d.close_price,
+    COALESCE(d.open_qfq, d.open_price) AS open_price,
+    COALESCE(d.high_qfq, d.high_price) AS high_price,
+    COALESCE(d.low_qfq, d.low_price) AS low_price,
+    COALESCE(d.close_qfq, d.close_price) AS close_price,
     d.volume, d.change_pct, d.turnover_ratio,
     row_number() OVER (PARTITION BY d.security_id ORDER BY d.trade_date DESC) AS rn_desc,
     avg(d.volume) OVER (
@@ -344,7 +347,10 @@ LIMIT_UP_PULLBACK_MA5_RECLAIM_SQL_TEMPLATE = """
 WITH bars AS (
   SELECT
     d.security_id, d.trade_date,
-    d.open_price, d.high_price, d.low_price, d.close_price,
+    COALESCE(d.open_qfq, d.open_price) AS open_price,
+    COALESCE(d.high_qfq, d.high_price) AS high_price,
+    COALESCE(d.low_qfq, d.low_price) AS low_price,
+    COALESCE(d.close_qfq, d.close_price) AS close_price,
     d.volume, d.change_pct, d.ma5_price, d.turnover_ratio,
     row_number() OVER (PARTITION BY d.security_id ORDER BY d.trade_date DESC) AS rn_desc,
     avg(d.volume) OVER (

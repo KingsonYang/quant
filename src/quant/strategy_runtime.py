@@ -19,7 +19,9 @@ from quant.backtest_common import (
     connect,
     load_all_trade_dates,
     load_low_price_cache,
+    load_low_qfq_cache,
     load_price_cache,
+    load_qfq_price_cache,
     load_trade_dates_in_range,
     quantize_pct,
     validate_trade_date,
@@ -510,7 +512,7 @@ def run_loaded_strategy_selection_backtest(
             ),
             default=0,
         )
-        price_cache = load_price_cache(
+        price_cache = load_qfq_price_cache(
             connection=connection,
             symbols=relevant_symbols,
             start_trade_date=trade_dates[0],
@@ -833,14 +835,14 @@ def run_loaded_strategy_backtest(
             for selection_results in candidate_selection_map.values()
             for candidate in selection_results
         }
-        price_cache = load_price_cache(
+        price_cache = load_qfq_price_cache(
             connection=connection,
             symbols=relevant_symbols,
             start_trade_date=trade_dates[0],
             end_trade_date=trade_dates[-1],
         )
         low_price_cache = (
-            load_low_price_cache(
+            load_low_qfq_cache(
                 connection=connection,
                 symbols=relevant_symbols,
                 start_trade_date=trade_dates[0],
