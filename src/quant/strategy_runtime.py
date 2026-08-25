@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
@@ -98,6 +98,7 @@ class _OpenPosition:
     buy_price: Decimal
     shares: int
     buy_amount: Decimal
+    buy_time: datetime | None = None
 
 
 def strategy_label(loaded: LoadedStrategyConfig) -> str:
@@ -888,12 +889,16 @@ def run_loaded_strategy_backtest(
                 continue
             selection_map[selection_date] = candidates
 
-        cash = request.initial_capital
+        settled_cash = request.initial_capital
+        unsettled_cash = Decimal("0")
         open_positions: list[_OpenPosition] = []
         trades: list[StrategyBacktestTrade] = []
         equity_curve: list[StrategyBacktestEquityPoint] = []
 
         for current_trade_day, current_date in enumerate(trade_dates, start=1):
+            if unsettled_cash > 0:
+                settled_cash += unsettled_cash
+                unsettled_cash = Decimal("0")
             if progress_callback is not None:
                 progress_callback(
                     StrategyBacktestProgress(
@@ -965,7 +970,12 @@ def run_loaded_strategy_backtest(
                     continue
 
                 sell_amount = effective_sell_price * Decimal(position.shares)
-                cash += sell_amount
+                unsettled_cash += sell_amount
+                sell_dt = (
+                    datetime.combine(current_date, time(9, 30))
+                    if exit_reason == "intraday_stop_loss"
+                    else datetime.combine(current_date, time(15, 0))
+                )
                 trades.append(
                     StrategyBacktestTrade(
                         symbol=position.symbol,
@@ -983,6 +993,8 @@ def run_loaded_strategy_backtest(
                         return_pct=effective_return_pct,
                         status="closed",
                         exit_reason=exit_reason,
+                        buy_time=position.buy_time,
+                        sell_time=sell_dt,
                     )
                 )
 
@@ -1014,10 +1026,11 @@ def run_loaded_strategy_backtest(
                 if buy_price is None:
                     continue
 
-                current_total_assets = cash + current_market_value
+                # T+1: only settled_cash is available for buying, not pending sell proceeds
+                current_total_assets = settled_cash + unsettled_cash + current_market_value
                 max_position_amount = current_total_assets * request.position_size_pct / Decimal("100")
                 lot_cost = buy_price * Decimal("100")
-                max_lots_by_cash = int(cash // lot_cost)
+                max_lots_by_cash = int(settled_cash // lot_cost)
                 max_lots_by_position = int(max_position_amount // lot_cost)
                 lots = min(max_lots_by_cash, max_lots_by_position)
                 if lots < 1:
@@ -1025,8 +1038,9 @@ def run_loaded_strategy_backtest(
 
                 shares = lots * 100
                 buy_amount = buy_price * Decimal(shares)
-                cash -= buy_amount
+                settled_cash -= buy_amount
                 current_market_value += buy_price * Decimal(shares)
+                buy_dt = datetime.combine(current_date, time(9, 30))
                 open_positions.append(
                     _OpenPosition(
                         symbol=candidate.symbol,
@@ -1037,16 +1051,18 @@ def run_loaded_strategy_backtest(
                         buy_price=buy_price,
                         shares=shares,
                         buy_amount=buy_amount,
+                        buy_time=buy_dt,
                     )
                 )
                 daily_buys += 1
 
+            total_cash = settled_cash + unsettled_cash
             equity_curve.append(
                 StrategyBacktestEquityPoint(
                     trade_date=current_date,
-                    cash_balance=_quantize_money(cash),
+                    cash_balance=_quantize_money(total_cash),
                     market_value=_quantize_money(current_market_value),
-                    total_assets=_quantize_money(cash + current_market_value),
+                    total_assets=_quantize_money(total_cash + current_market_value),
                 )
             )
 
@@ -1060,6 +1076,7 @@ def run_loaded_strategy_backtest(
                 (market_value - position.buy_amount) * Decimal("100") / position.buy_amount
             )
             _, final_close_price = _lookup_price(price_cache, position.symbol, final_trade_date)
+            final_dt = datetime.combine(final_trade_date, time(15, 0))
             trades.append(
                 StrategyBacktestTrade(
                     symbol=position.symbol,
@@ -1077,6 +1094,8 @@ def run_loaded_strategy_backtest(
                     return_pct=return_pct,
                     status="open",
                     exit_reason="open_at_end",
+                    buy_time=position.buy_time,
+                    sell_time=final_dt,
                 )
             )
 
@@ -1085,7 +1104,7 @@ def run_loaded_strategy_backtest(
         request=request,
         trade_days=len(trade_dates),
         trades=trades,
-        current_cash_balance=cash,
+        current_cash_balance=settled_cash + unsettled_cash,
         current_market_value=current_market_value,
         rule_count=_rule_count(loaded),
     )

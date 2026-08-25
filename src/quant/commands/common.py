@@ -118,7 +118,8 @@ def echo_strategy_backtest_report(report: StrategyBacktestReport) -> None:
     for trade in report.trades:
         typer.echo(
             f"{trade.symbol}\t{trade.name}\tselection_date={trade.selection_date}\t"
-            f"buy_date={trade.buy_date}\tsell_date={trade.sell_date}\t"
+            f"buy_date={trade.buy_date}\tbuy_time={trade.buy_time}\t"
+            f"sell_date={trade.sell_date}\tsell_time={trade.sell_time}\t"
             f"buy_price={trade.buy_price}\tsell_price={trade.sell_price}\t"
             f"shares={trade.shares}\tlots={trade.lots}\tbuy_amount={trade.buy_amount}\t"
             f"sell_amount={trade.sell_amount}\tholding_days={trade.holding_days}\t"

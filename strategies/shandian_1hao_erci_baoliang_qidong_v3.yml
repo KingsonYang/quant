@@ -24,7 +24,7 @@ strategy_backtest:  # 组合/资金回测默认值；考虑现金、仓位数量
   max_positions: 1  # 最多同时持有的股票数量。
   max_daily_buys: 1  # 单个交易日最多新买入的股票数量。
   initial_capital: 100000  # 初始资金。
-  position_size_pct: 100  # 单只股票目标仓位占当前总资产的百分比。
+  position_size_pct: 50  # 单只股票目标仓位占当前总资产的百分比。
   take_profit_pct: 20  # 止盈阈值，收益率达到该百分比时卖出。
   stop_loss_pct: -10  # 止损阈值，收益率低于该百分比时卖出；通常为负数。
   selection_top_n: 2  # 每天按 selection 排序后，只允许前 N 只进入买入候选。
