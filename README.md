@@ -213,7 +213,6 @@ quant validate amount_ratio_prev_5d_near_2x__selection_backtest__rank_1__discove
 - `quant select-stocks`
 - `quant backtest-selection`
 - `quant backtest-strategy`
-- `quant web`
 
 迁移对照：
 

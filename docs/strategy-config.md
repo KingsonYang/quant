@@ -311,6 +311,5 @@ YAML 方案下，CLI 只允许覆盖运行时参数：
 - `quant select-stocks`
 - `quant backtest-selection`
 - `quant backtest-strategy`
-- `quant web`
 
 研究脚本 `scripts/research/backtest_pattern_selection_hps.py` 也继续保留，但只是兼容包装层。推荐迁移到 `quant run matrix strategy-holding-periods ...`。

@@ -18,33 +18,9 @@ from quant.commands.common import (
 from quant.db.init_db import DEFAULT_DB_PATH
 from quant.selection import select_stocks
 from quant.strategy_backtest import StrategyBacktestRequest, run_strategy_backtest
-from quant.web import serve as serve_web
 
 
 def register(app: typer.Typer) -> None:
-    @app.command("web")
-    def web_command(
-        host: str = typer.Option(
-            "127.0.0.1",
-            "--host",
-            help=f"Host address for the legacy backtest web app. {LEGACY_HELP_SUFFIX}",
-        ),
-        port: int = typer.Option(
-            8000,
-            "--port",
-            min=1,
-            max=65535,
-            help=f"Port for the legacy backtest web app. {LEGACY_HELP_SUFFIX}",
-        ),
-        db_path: Path = typer.Option(
-            DEFAULT_DB_PATH,
-            "--db-path",
-            help=f"Target DuckDB file path used by the legacy web app. {LEGACY_HELP_SUFFIX}",
-        ),
-    ) -> None:
-        """Serve the legacy backtest web pages. Prefer CLI strategy workflows."""
-        serve_web(host=host, port=port, default_db_path=db_path)
-
     @app.command("select-stocks")
     def select_stocks_command(
         trade_date: str = typer.Option(
