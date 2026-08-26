@@ -105,11 +105,35 @@ class StrategyBacktestSummary:
 
 
 @dataclass(frozen=True)
+class StrategyBacktestResumePosition:
+    symbol: str
+    name: str
+    selection_date: date
+    buy_date: date
+    buy_price: Decimal
+    shares: int
+    buy_amount: Decimal
+    buy_time: datetime | None = None
+
+
+@dataclass(frozen=True)
+class StrategyBacktestResumeState:
+    original_start_date: date
+    last_end_date: date
+    settled_cash: Decimal
+    unsettled_cash: Decimal
+    open_positions: tuple[StrategyBacktestResumePosition, ...]
+    closed_trades: tuple[StrategyBacktestTrade, ...]
+    equity_curve: tuple["StrategyBacktestEquityPoint", ...]
+
+
+@dataclass(frozen=True)
 class StrategyBacktestReport:
     request: StrategyBacktestRequest
     summary: StrategyBacktestSummary
     trades: list[StrategyBacktestTrade]
     equity_curve: list["StrategyBacktestEquityPoint"]
+    resume_state: StrategyBacktestResumeState | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +141,7 @@ class StrategyBacktestProgress:
     current_trade_day: int
     total_trade_days: int
     trade_date: date
+    total_assets: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -327,14 +352,6 @@ def run_strategy_backtest(
             if unsettled_cash > 0:
                 settled_cash += unsettled_cash
                 unsettled_cash = Decimal("0")
-            if progress_callback is not None:
-                progress_callback(
-                    StrategyBacktestProgress(
-                        current_trade_day=current_trade_day,
-                        total_trade_days=len(trade_dates),
-                        trade_date=current_date,
-                    )
-                )
 
             current_trade_index = trade_date_index[current_date]
             remaining_positions: list[_OpenPosition] = []
@@ -462,6 +479,15 @@ def run_strategy_backtest(
                     total_assets=_quantize_money(total_cash + current_market_value),
                 )
             )
+            if progress_callback is not None:
+                progress_callback(
+                    StrategyBacktestProgress(
+                        current_trade_day=current_trade_day,
+                        total_trade_days=len(trade_dates),
+                        trade_date=current_date,
+                        total_assets=equity_curve[-1].total_assets,
+                    )
+                )
 
         final_trade_date = trade_dates[-1]
         current_market_value = Decimal("0")

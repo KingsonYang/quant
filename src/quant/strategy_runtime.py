@@ -43,6 +43,8 @@ from quant.strategy_backtest import (
     StrategyBacktestProgress,
     StrategyBacktestReport,
     StrategyBacktestRequest,
+    StrategyBacktestResumePosition,
+    StrategyBacktestResumeState,
     StrategyBacktestSummary,
     StrategyBacktestTrade,
 )
@@ -772,6 +774,65 @@ def _build_strategy_backtest_summary(
     )
 
 
+def _build_resume_state(
+    *,
+    original_start_date: date,
+    last_end_date: date,
+    settled_cash: Decimal,
+    unsettled_cash: Decimal,
+    open_positions: list[_OpenPosition],
+    trades: list[StrategyBacktestTrade],
+    equity_curve: list[StrategyBacktestEquityPoint],
+) -> StrategyBacktestResumeState:
+    return StrategyBacktestResumeState(
+        original_start_date=original_start_date,
+        last_end_date=last_end_date,
+        settled_cash=settled_cash,
+        unsettled_cash=unsettled_cash,
+        open_positions=tuple(
+            StrategyBacktestResumePosition(
+                symbol=position.symbol,
+                name=position.name,
+                selection_date=position.selection_date,
+                buy_date=position.buy_date,
+                buy_price=position.buy_price,
+                shares=position.shares,
+                buy_amount=position.buy_amount,
+                buy_time=position.buy_time,
+            )
+            for position in open_positions
+        ),
+        closed_trades=tuple(trade for trade in trades if trade.status == "closed"),
+        equity_curve=tuple(equity_curve),
+    )
+
+
+def _hydrate_open_positions(
+    resume_state: StrategyBacktestResumeState,
+    trade_date_index: dict[date, int],
+) -> list[_OpenPosition]:
+    hydrated: list[_OpenPosition] = []
+    for position in resume_state.open_positions:
+        if position.buy_date not in trade_date_index:
+            raise StrategyRuntimeError(
+                f"Resume position buy_date {position.buy_date} is not in the trading calendar."
+            )
+        hydrated.append(
+            _OpenPosition(
+                symbol=position.symbol,
+                name=position.name,
+                selection_date=position.selection_date,
+                buy_date=position.buy_date,
+                buy_trade_index=trade_date_index[position.buy_date],
+                buy_price=position.buy_price,
+                shares=position.shares,
+                buy_amount=position.buy_amount,
+                buy_time=position.buy_time,
+            )
+        )
+    return hydrated
+
+
 def run_loaded_strategy_backtest(
     *,
     db_path: Path,
@@ -780,6 +841,7 @@ def run_loaded_strategy_backtest(
     end_date: date,
     holding_period: int | None = None,
     progress_callback: Callable[[StrategyBacktestProgress], None] | None = None,
+    resume_state: StrategyBacktestResumeState | None = None,
 ) -> StrategyBacktestReport:
     if loaded.config.strategy_backtest is None:
         raise StrategyRuntimeError(
@@ -807,8 +869,25 @@ def run_loaded_strategy_backtest(
         intraday_stop_loss_enabled=defaults.intraday_stop_loss_enabled,
     )
 
+    if resume_state is not None:
+        if resume_state.original_start_date != start_date:
+            raise StrategyRuntimeError(
+                "Resume start_date must match the original backtest start_date."
+            )
+        if end_date <= resume_state.last_end_date:
+            raise StrategyRuntimeError(
+                "Resume end_date must be after the last completed trade date."
+            )
+
     with connect(db_path) as connection:
         trade_dates = _validate_strategy_backtest_inputs(connection=connection, request=request)
+        sim_dates = (
+            trade_dates
+            if resume_state is None
+            else [trade_day for trade_day in trade_dates if trade_day > resume_state.last_end_date]
+        )
+        if not sim_dates:
+            raise StrategyRuntimeError("No new trading dates found to resume.")
         all_trade_dates = load_all_trade_dates(connection)
         trade_date_index = {trade_day: index for index, trade_day in enumerate(all_trade_dates)}
         raw_selection_map = _select_candidates_in_range_with_connection(
@@ -834,6 +913,8 @@ def run_loaded_strategy_backtest(
             for selection_results in candidate_selection_map.values()
             for candidate in selection_results
         }
+        if resume_state is not None:
+            relevant_symbols.update(position.symbol for position in resume_state.open_positions)
         price_cache = load_price_cache(
             connection=connection,
             symbols=relevant_symbols,
@@ -889,24 +970,23 @@ def run_loaded_strategy_backtest(
                 continue
             selection_map[selection_date] = candidates
 
-        settled_cash = request.initial_capital
-        unsettled_cash = Decimal("0")
-        open_positions: list[_OpenPosition] = []
-        trades: list[StrategyBacktestTrade] = []
-        equity_curve: list[StrategyBacktestEquityPoint] = []
+        if resume_state is None:
+            settled_cash = request.initial_capital
+            unsettled_cash = Decimal("0")
+            open_positions = []
+            trades = []
+            equity_curve = []
+        else:
+            settled_cash = resume_state.settled_cash
+            unsettled_cash = resume_state.unsettled_cash
+            open_positions = _hydrate_open_positions(resume_state, trade_date_index)
+            trades = list(resume_state.closed_trades)
+            equity_curve = list(resume_state.equity_curve)
 
-        for current_trade_day, current_date in enumerate(trade_dates, start=1):
+        for current_trade_day, current_date in enumerate(sim_dates, start=1):
             if unsettled_cash > 0:
                 settled_cash += unsettled_cash
                 unsettled_cash = Decimal("0")
-            if progress_callback is not None:
-                progress_callback(
-                    StrategyBacktestProgress(
-                        current_trade_day=current_trade_day,
-                        total_trade_days=len(trade_dates),
-                        trade_date=current_date,
-                    )
-                )
 
             current_trade_index = trade_date_index[current_date]
             remaining_positions: list[_OpenPosition] = []
@@ -1000,10 +1080,13 @@ def run_loaded_strategy_backtest(
 
             open_positions = remaining_positions
 
-            if current_trade_day == 1:
+            if resume_state is None and current_trade_day == 1:
                 continue
 
-            selection_date = trade_dates[current_trade_day - 2]
+            current_index = trade_date_index[current_date]
+            if current_index < 1:
+                continue
+            selection_date = all_trade_dates[current_index - 1]
             daily_candidates = selection_map.get(selection_date, [])
             daily_buys = 0
             current_market_value = sum(
@@ -1065,8 +1148,27 @@ def run_loaded_strategy_backtest(
                     total_assets=_quantize_money(total_cash + current_market_value),
                 )
             )
+            if progress_callback is not None:
+                progress_callback(
+                    StrategyBacktestProgress(
+                        current_trade_day=current_trade_day,
+                        total_trade_days=len(sim_dates),
+                        trade_date=current_date,
+                        total_assets=equity_curve[-1].total_assets,
+                    )
+                )
 
-        final_trade_date = trade_dates[-1]
+        resume_snapshot = _build_resume_state(
+            original_start_date=request.start_date,
+            last_end_date=request.end_date,
+            settled_cash=settled_cash,
+            unsettled_cash=unsettled_cash,
+            open_positions=open_positions,
+            trades=trades,
+            equity_curve=equity_curve,
+        )
+
+        final_trade_date = sim_dates[-1]
         current_market_value = Decimal("0")
         for position in open_positions:
             market_value = _position_market_value(position, final_trade_date, price_cache)
@@ -1113,6 +1215,7 @@ def run_loaded_strategy_backtest(
         summary=summary,
         trades=trades,
         equity_curve=equity_curve,
+        resume_state=resume_snapshot,
     )
 
 

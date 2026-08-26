@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}策略回测 · quant 工作台{% endblock %}
+{% block extra_head %}
+<script>
+(function () {
+  var srcs = [
+    "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js",
+    "https://cdn.staticfile.org/echarts/5.5.0/echarts.min.js"
+  ];
+  var i = 0;
+  function load() {
+    if (i >= srcs.length) return;
+    var s = document.createElement("script");
+    s.src = srcs[i++];
+    s.onload = function () { window.__ECHARTS_READY__ = true; };
+    s.onerror = function () { load(); };
+    document.head.appendChild(s);
+  }
+  load();
+})();
+</script>
+{% endblock %}
+{% block content %}
+<div class="container" id="backtest-page">
+  <div class="header">
+    <h1 id="reportTitle">策略回测</h1>
+    <div class="subtitle" id="reportSubtitle">选择策略和区间后运行；同一开始日可往后追加</div>
+    <div class="run-info" id="runInfo"></div>
+  </div>
+  <div class="toolbar">
+    <label>策略
+      <select id="bt-strategy"></select>
+    </label>
+    <label>开始日
+      <input id="bt-start" type="date">
+    </label>
+    <label>结束日
+      <input id="bt-end" type="date">
+    </label>
+    <label>已跑区间
+      <select id="bt-runs">
+        <option value="">暂无已跑区间</option>
+      </select>
+    </label>
+    <button id="bt-run" class="btn btn-primary" type="button">运行</button>
+  </div>
+  <p id="bt-meta" class="empty-hint"></p>
+
+  <div id="bt-results" hidden>
+    <div class="summary-grid" id="summaryGrid"></div>
+    <div class="stats-row" id="statsRow"></div>
+    <div class="chart-section">
+      <div class="chart-title">资产净值曲线（累计权益）</div>
+      <div id="equityChart" class="chart-box"></div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">逐笔交易收益率</div>
+      <div id="tradeChart" class="chart-box"></div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">回撤曲线</div>
+      <div id="drawdownChart" class="chart-box"></div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">月度收益分布</div>
+      <div id="monthlyChart" class="chart-box"></div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">策略参数</div>
+      <div class="params-grid" id="paramsGrid"></div>
+    </div>
+    <div class="chart-section" id="yearly-section">
+      <div class="chart-title">分年指标</div>
+      <div class="params-grid" id="yearlyGrid"></div>
+    </div>
+    <div class="chart-section" id="positions-section">
+      <div class="chart-title">持仓</div>
+      <div class="table-wrap">
+        <table id="positionTable"></table>
+      </div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-title">交易明细</div>
+      <div class="table-wrap">
+        <table id="tradeTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>代码</th>
+              <th>名称</th>
+              <th>买入日期</th>
+              <th>卖出日期</th>
+              <th>买入价</th>
+              <th>卖出价</th>
+              <th>数量</th>
+              <th>买入金额</th>
+              <th>卖出金额</th>
+              <th>持有天数</th>
+              <th>收益率</th>
+              <th>退出原因</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="tradeBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

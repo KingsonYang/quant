@@ -27,7 +27,14 @@ from quant.experiments.models import (
     ExperimentListItem,
     SavedExperiment,
 )
-from quant.strategy_backtest import StrategyBacktestReport
+from quant.continuation import continuation_parameter_hash
+from quant.strategy_backtest import (
+    StrategyBacktestEquityPoint,
+    StrategyBacktestReport,
+    StrategyBacktestResumePosition,
+    StrategyBacktestResumeState,
+    StrategyBacktestTrade,
+)
 
 
 DEFAULT_EXPERIMENTS_DIR = Path("results/experiments")
@@ -51,6 +58,80 @@ def _serialize_for_json(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_serialize_for_json(item) for item in value]
     return value
+
+
+def _parse_iso_date(value: Any) -> date:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    return date.fromisoformat(str(value)[:10])
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
+
+
+def _parse_decimal(value: Any) -> Decimal:
+    return Decimal(str(value))
+
+
+def _deserialize_resume_state(payload: dict[str, Any]) -> StrategyBacktestResumeState:
+    positions = tuple(
+        StrategyBacktestResumePosition(
+            symbol=item["symbol"],
+            name=item["name"],
+            selection_date=_parse_iso_date(item["selection_date"]),
+            buy_date=_parse_iso_date(item["buy_date"]),
+            buy_price=_parse_decimal(item["buy_price"]),
+            shares=int(item["shares"]),
+            buy_amount=_parse_decimal(item["buy_amount"]),
+            buy_time=_parse_optional_datetime(item.get("buy_time")),
+        )
+        for item in payload.get("open_positions", [])
+    )
+    closed_trades = tuple(
+        StrategyBacktestTrade(
+            symbol=item["symbol"],
+            name=item["name"],
+            selection_date=_parse_iso_date(item["selection_date"]),
+            buy_date=_parse_iso_date(item["buy_date"]),
+            sell_date=None if item.get("sell_date") in (None, "") else _parse_iso_date(item["sell_date"]),
+            buy_price=_parse_decimal(item["buy_price"]),
+            sell_price=None if item.get("sell_price") in (None, "") else _parse_decimal(item["sell_price"]),
+            shares=int(item["shares"]),
+            lots=int(item["lots"]),
+            buy_amount=_parse_decimal(item["buy_amount"]),
+            sell_amount=None if item.get("sell_amount") in (None, "") else _parse_decimal(item["sell_amount"]),
+            holding_days=int(item["holding_days"]),
+            return_pct=None if item.get("return_pct") in (None, "") else _parse_decimal(item["return_pct"]),
+            status=item["status"],
+            exit_reason=item.get("exit_reason"),
+            buy_time=_parse_optional_datetime(item.get("buy_time")),
+            sell_time=_parse_optional_datetime(item.get("sell_time")),
+        )
+        for item in payload.get("closed_trades", [])
+    )
+    equity_curve = tuple(
+        StrategyBacktestEquityPoint(
+            trade_date=_parse_iso_date(item["trade_date"]),
+            cash_balance=_parse_decimal(item["cash_balance"]),
+            market_value=_parse_decimal(item["market_value"]),
+            total_assets=_parse_decimal(item["total_assets"]),
+        )
+        for item in payload.get("equity_curve", [])
+    )
+    return StrategyBacktestResumeState(
+        original_start_date=_parse_iso_date(payload["original_start_date"]),
+        last_end_date=_parse_iso_date(payload["last_end_date"]),
+        settled_cash=_parse_decimal(payload["settled_cash"]),
+        unsettled_cash=_parse_decimal(payload["unsettled_cash"]),
+        open_positions=positions,
+        closed_trades=closed_trades,
+        equity_curve=equity_curve,
+    )
 
 
 def ensure_experiment_schema(connection: duckdb.DuckDBPyConnection) -> None:
@@ -533,61 +614,73 @@ class ExperimentStore:
         run_id: int,
         report: StrategyBacktestReport,
         security_ids: dict[str, int],
+        after_date: date | None = None,
     ) -> dict[date, Decimal]:
         turnover_by_date: dict[date, Decimal] = {}
         for trade in report.trades:
             security_id = security_ids[trade.symbol]
-            order_id = self._next_id(connection, "backtest_order", "order_id")
-            connection.execute(
-                """
-                INSERT INTO backtest_order (
-                    order_id, run_id, security_id, submitted_date, intended_exec_date,
-                    side, order_type, quantity, target_weight, status, reject_reason, created_at
+            write_buy = after_date is None or trade.buy_date > after_date
+            if write_buy:
+                order_id = self._next_id(connection, "backtest_order", "order_id")
+                connection.execute(
+                    """
+                    INSERT INTO backtest_order (
+                        order_id, run_id, security_id, submitted_date, intended_exec_date,
+                        side, order_type, quantity, target_weight, status, reject_reason, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        order_id,
+                        run_id,
+                        security_id,
+                        trade.selection_date,
+                        trade.buy_date,
+                        "buy",
+                        "market",
+                        trade.shares,
+                        None,
+                        "filled",
+                        None,
+                        _utcnow(),
+                    ],
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    order_id,
-                    run_id,
-                    security_id,
-                    trade.selection_date,
-                    trade.buy_date,
-                    "buy",
-                    "market",
-                    trade.shares,
-                    None,
-                    "filled",
-                    None,
-                    _utcnow(),
-                ],
-            )
-            fill_id = self._next_id(connection, "backtest_fill", "fill_id")
-            connection.execute(
-                """
-                INSERT INTO backtest_fill (
-                    fill_id, order_id, run_id, security_id, fill_date, fill_price,
-                    fill_quantity, gross_amount, commission, tax, slippage_cost, created_at
+                fill_id = self._next_id(connection, "backtest_fill", "fill_id")
+                connection.execute(
+                    """
+                    INSERT INTO backtest_fill (
+                        fill_id, order_id, run_id, security_id, fill_date, fill_price,
+                        fill_quantity, gross_amount, commission, tax, slippage_cost, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        fill_id,
+                        order_id,
+                        run_id,
+                        security_id,
+                        trade.buy_date,
+                        trade.buy_price,
+                        trade.shares,
+                        trade.buy_amount,
+                        Decimal("0"),
+                        Decimal("0"),
+                        Decimal("0"),
+                        _utcnow(),
+                    ],
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    fill_id,
-                    order_id,
-                    run_id,
-                    security_id,
-                    trade.buy_date,
-                    trade.buy_price,
-                    trade.shares,
-                    trade.buy_amount,
-                    Decimal("0"),
-                    Decimal("0"),
-                    Decimal("0"),
-                    _utcnow(),
-                ],
-            )
-            turnover_by_date[trade.buy_date] = turnover_by_date.get(trade.buy_date, Decimal("0")) + trade.buy_amount
+                turnover_by_date[trade.buy_date] = (
+                    turnover_by_date.get(trade.buy_date, Decimal("0")) + trade.buy_amount
+                )
 
-            if trade.status != "closed" or trade.sell_date is None or trade.sell_price is None or trade.sell_amount is None:
+            write_sell = (
+                trade.status == "closed"
+                and trade.sell_date is not None
+                and trade.sell_price is not None
+                and trade.sell_amount is not None
+                and (after_date is None or trade.sell_date > after_date)
+            )
+            if not write_sell:
                 continue
 
             sell_order_id = self._next_id(connection, "backtest_order", "order_id")
@@ -638,7 +731,9 @@ class ExperimentStore:
                     _utcnow(),
                 ],
             )
-            turnover_by_date[trade.sell_date] = turnover_by_date.get(trade.sell_date, Decimal("0")) + trade.sell_amount
+            turnover_by_date[trade.sell_date] = (
+                turnover_by_date.get(trade.sell_date, Decimal("0")) + trade.sell_amount
+            )
         return turnover_by_date
 
     def _write_position_snapshots(
@@ -648,8 +743,11 @@ class ExperimentStore:
         report: StrategyBacktestReport,
         security_ids: dict[str, int],
         close_prices: dict[tuple[str, date], Decimal],
+        after_date: date | None = None,
     ) -> None:
         for point in report.equity_curve:
+            if after_date is not None and point.trade_date <= after_date:
+                continue
             for trade in report.trades:
                 if trade.buy_date > point.trade_date:
                     continue
@@ -688,6 +786,7 @@ class ExperimentStore:
         run_id: int,
         report: StrategyBacktestReport,
         turnover_by_date: dict[date, Decimal],
+        after_date: date | None = None,
     ) -> None:
         max_total_assets = None
         previous_total_assets = None
@@ -708,6 +807,10 @@ class ExperimentStore:
             traded_amount = turnover_by_date.get(point.trade_date)
             if traded_amount is not None and previous_total_assets not in (None, Decimal("0")):
                 turnover = traded_amount / previous_total_assets
+            skip_insert = after_date is not None and point.trade_date <= after_date
+            previous_total_assets = total_assets
+            if skip_insert:
+                continue
             connection.execute(
                 """
                 INSERT INTO equity_snapshot (
@@ -765,6 +868,7 @@ class ExperimentStore:
                     "selection_type": loaded.config.selection.type,
                     "sort_by": loaded.config.selection.sort_by,
                     "sort_order": loaded.config.selection.sort_order,
+                    "continuation_hash": continuation_parameter_hash(loaded),
                 },
                 parameter_snapshot=parameter_snapshot,
                 initial_cash=report.request.initial_capital,
@@ -788,6 +892,11 @@ class ExperimentStore:
                 artifact_dir,
                 "yearly_metrics.json",
                 build_strategy_yearly_metrics(report),
+            )
+            resume_path = self._write_json_artifact(
+                artifact_dir,
+                "resume_state.json",
+                report.resume_state,
             )
             summary_path = self._write_json_artifact(
                 artifact_dir,
@@ -819,6 +928,7 @@ class ExperimentStore:
                     self._artifact_ref(trades_path, artifact_name="trades", artifact_type="csv"),
                     self._artifact_ref(equity_path, artifact_name="equity_curve", artifact_type="csv"),
                     self._artifact_ref(yearly_path, artifact_name="yearly_metrics", artifact_type="json"),
+                    self._artifact_ref(resume_path, artifact_name="resume_state", artifact_type="json"),
                     self._artifact_ref(summary_path, artifact_name="summary", artifact_type="json"),
                 ],
             )
@@ -828,6 +938,170 @@ class ExperimentStore:
                 score=score.score,
                 score_version=score.score_version,
                 artifact_dir=artifact_dir,
+            )
+
+    def find_continuable_strategy_run(
+        self,
+        *,
+        strategy_key: str,
+        start_date: date,
+        parameter_hash: str,
+    ) -> int | None:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT br.run_id, br.universe_definition
+                FROM backtest_run AS br
+                JOIN strategy_definition AS sd
+                  ON sd.strategy_id = br.strategy_id
+                WHERE sd.strategy_key = ?
+                  AND br.start_date = ?
+                  AND br.run_kind = ?
+                  AND br.run_status = 'completed'
+                ORDER BY br.run_id DESC
+                """,
+                [strategy_key, start_date, RUN_KIND_STRATEGY_BACKTEST],
+            ).fetchall()
+        for run_id, universe_raw in rows:
+            universe = json.loads(universe_raw) if universe_raw else {}
+            if universe.get("continuation_hash") == parameter_hash:
+                return int(run_id)
+        return None
+
+    def load_resume_state(self, run_id: int) -> StrategyBacktestResumeState:
+        artifact_path = self.artifacts_root / f"run_{run_id}" / "resume_state.json"
+        if not artifact_path.exists():
+            raise ValueError(f"Run {run_id} has no resume_state.json and cannot be continued.")
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        if payload is None:
+            raise ValueError(f"Run {run_id} resume_state.json is empty.")
+        return _deserialize_resume_state(payload)
+
+    def append_strategy_backtest(
+        self,
+        run_id: int,
+        loaded: LoadedStrategyConfig,
+        new_segment: StrategyBacktestReport,
+    ) -> SavedExperiment:
+        expected_hash = continuation_parameter_hash(loaded)
+        with self.connect() as connection:
+            header = connection.execute(
+                """
+                SELECT br.start_date, br.end_date, br.universe_definition, br.run_status
+                FROM backtest_run AS br
+                WHERE br.run_id = ?
+                """,
+                [run_id],
+            ).fetchone()
+            if header is None:
+                raise ValueError(f"Unknown run_id: {run_id}")
+            old_start, old_end, universe_raw, run_status = header
+            if run_status != "completed":
+                raise ValueError(f"Run {run_id} is not completed.")
+            universe = json.loads(universe_raw) if universe_raw else {}
+            if universe.get("continuation_hash") != expected_hash:
+                raise ValueError("Strategy parameters changed; cannot append this run.")
+            if new_segment.summary.start_date != old_start:
+                raise ValueError("Append start_date must match the original run start_date.")
+            if new_segment.summary.end_date <= old_end:
+                raise ValueError("Append end_date must be after the saved run end_date.")
+
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                metrics = build_strategy_backtest_metrics(new_segment)
+                score = score_strategy_backtest(metrics)
+                all_metrics = dict(metrics)
+                all_metrics["score"] = score.score
+                symbols = {trade.symbol for trade in new_segment.trades}
+                security_ids = self._load_security_ids(connection, symbols)
+                close_prices = self._close_prices_by_symbol_date(
+                    connection,
+                    symbols,
+                    new_segment.summary.start_date,
+                    new_segment.summary.end_date,
+                )
+                turnover_by_date = self._write_strategy_orders_and_fills(
+                    connection,
+                    run_id,
+                    new_segment,
+                    security_ids,
+                    after_date=old_end,
+                )
+                self._write_position_snapshots(
+                    connection,
+                    run_id,
+                    new_segment,
+                    security_ids,
+                    close_prices,
+                    after_date=old_end,
+                )
+                self._write_equity_snapshots(
+                    connection,
+                    run_id,
+                    new_segment,
+                    turnover_by_date,
+                    after_date=old_end,
+                )
+                connection.execute("DELETE FROM run_metric WHERE run_id = ?", [run_id])
+                self._write_metrics(connection, run_id, all_metrics)
+                artifact_dir = self._prepare_artifact_dir(run_id)
+                trades_path = self._write_csv_artifact(
+                    artifact_dir,
+                    "trades.csv",
+                    [_serialize_for_json(trade) for trade in new_segment.trades],
+                )
+                equity_path = self._write_csv_artifact(
+                    artifact_dir,
+                    "equity_curve.csv",
+                    [_serialize_for_json(point) for point in new_segment.equity_curve],
+                )
+                yearly_path = self._write_json_artifact(
+                    artifact_dir,
+                    "yearly_metrics.json",
+                    build_strategy_yearly_metrics(new_segment),
+                )
+                resume_path = self._write_json_artifact(
+                    artifact_dir,
+                    "resume_state.json",
+                    new_segment.resume_state,
+                )
+                summary_path = self._write_json_artifact(
+                    artifact_dir,
+                    "summary.json",
+                    {
+                        "request": new_segment.request,
+                        "summary": new_segment.summary,
+                        "metrics": all_metrics,
+                        "score_version": score.score_version,
+                    },
+                )
+                connection.execute("DELETE FROM run_artifact WHERE run_id = ?", [run_id])
+                self._write_artifacts(
+                    connection,
+                    run_id,
+                    artifact_dir,
+                    [
+                        self._artifact_ref(trades_path, artifact_name="trades", artifact_type="csv"),
+                        self._artifact_ref(equity_path, artifact_name="equity_curve", artifact_type="csv"),
+                        self._artifact_ref(yearly_path, artifact_name="yearly_metrics", artifact_type="json"),
+                        self._artifact_ref(resume_path, artifact_name="resume_state", artifact_type="json"),
+                        self._artifact_ref(summary_path, artifact_name="summary", artifact_type="json"),
+                    ],
+                )
+                connection.execute(
+                    "UPDATE backtest_run SET end_date = ?, finished_at = ? WHERE run_id = ?",
+                    [new_segment.summary.end_date, _utcnow(), run_id],
+                )
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+            return SavedExperiment(
+                run_id=run_id,
+                run_kind=RUN_KIND_STRATEGY_BACKTEST,
+                score=score.score,
+                score_version=score.score_version,
+                artifact_dir=self._prepare_artifact_dir(run_id),
             )
 
     def list_runs(

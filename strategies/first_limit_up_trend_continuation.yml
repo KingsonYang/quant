@@ -25,11 +25,11 @@ backtest_selection:
   holding_period: 1
   selection_top_n: 5
 strategy_backtest:
-  holding_period: 2
+  holding_period: 1
   max_positions: 1
   max_daily_buys: 1
-  initial_capital: 10000000
-  position_size_pct: 100
+  initial_capital: 100000
+  position_size_pct: 50
   take_profit_pct: 10
   stop_loss_pct: -5
   selection_top_n: 1

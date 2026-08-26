@@ -15,6 +15,9 @@ dependencies:
       - pydantic
       - pyyaml
       - typer
+      - fastapi
+      - uvicorn
+      - jinja2
       - pytest
       - python-dotenv
       - ruff

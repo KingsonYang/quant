@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}数据 · quant 工作台{% endblock %}
+{% block content %}
+<div class="container" id="data-page">
+  <div class="header">
+    <h1>数据</h1>
+    <div class="subtitle">TDXQuant 增量补行情，并同步交易日历</div>
+  </div>
+  <div class="summary-grid" id="data-cards"></div>
+  <div class="toolbar">
+    <label>增量天数
+      <input id="ingest-days" type="number" min="1" max="30" value="5">
+    </label>
+    <button id="ingest-btn" class="btn btn-primary" type="button">增量更新行情</button>
+    <button id="calendar-btn" class="btn btn-secondary" type="button">同步交易日历</button>
+  </div>
+  <p id="tdx-message" class="empty-hint"></p>
+  <p id="data-status" hidden></p>
+  <div class="chart-section">
+    <div class="chart-title">任务日志</div>
+    <pre class="job-log" id="job-log">尚无任务</pre>
+  </div>
+</div>
+{% endblock %}

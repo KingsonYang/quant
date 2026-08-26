@@ -1,6 +1,6 @@
 import typer
 
-from quant.commands import calendar, discover, evolve, experiment, ingest, legacy, optimize, run, strategy, summarize, validate
+from quant.commands import calendar, discover, evolve, experiment, ingest, legacy, optimize, run, strategy, summarize, validate, web
 
 app = typer.Typer(help="Utilities for the quant project.")
 app.add_typer(strategy.app, name="strategy")
@@ -15,6 +15,7 @@ optimize.register(app)
 validate.register(app)
 evolve.register(app)
 discover.register(app)
+web.register(app)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ dependencies = [
   "pydantic",
   "PyYAML",
   "typer",
+  "fastapi",
+  "uvicorn",
+  "jinja2",
 ]
 
 [project.scripts]
@@ -20,6 +23,9 @@ quant = "quant.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+"quant.web" = ["templates/*.html", "static/*.css", "static/*.js"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

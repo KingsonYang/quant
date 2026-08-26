@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}选股 · quant 工作台{% endblock %}
+{% block content %}
+<div class="container" id="select-page">
+  <div class="header">
+    <h1>选股</h1>
+    <div class="subtitle">按 YAML 策略查看某日候选股</div>
+    <div class="run-info" id="select-meta"></div>
+  </div>
+  <div class="toolbar">
+    <label>策略
+      <select id="select-strategy"></select>
+    </label>
+    <label>交易日
+      <input id="select-date" type="date">
+    </label>
+    <button id="select-btn" class="btn btn-primary" type="button">选股</button>
+  </div>
+  <p id="select-empty" class="empty-hint"></p>
+  <p id="select-error" class="warn-text"></p>
+  <div class="chart-section">
+    <div class="chart-title">候选列表</div>
+    <div class="table-wrap">
+      <table id="select-table"></table>
+    </div>
+  </div>
+</div>
+{% endblock %}
