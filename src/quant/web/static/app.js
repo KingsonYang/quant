@@ -11,15 +11,17 @@ async function fetchJson(url, options) {
   return payload;
 }
 
-async function waitForJob() {
-  for (let i = 0; i < 600; i += 1) {
+async function waitForJob(onUpdate) {
+  while (true) {
     const job = await fetchJson("/api/jobs/current");
+    if (onUpdate) {
+      onUpdate(job);
+    }
     if (!job || job.status !== "running") {
       return job;
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
-  throw new Error("任务超时");
 }
 
 function subscribeJob(onEvent) {
@@ -141,6 +143,26 @@ function formatJobLog(job) {
     }
   }
   return lines.join("\n") || "尚无任务";
+}
+
+function formatIngestProgress(progress) {
+  if (!progress) {
+    return "";
+  }
+  const total = Number(progress.total) || 0;
+  const current = Number(progress.current) || 0;
+  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  const parts = [`${pct}%`, `${current}/${total}`];
+  if (progress.inserted != null) {
+    parts.push(`写入 ${progress.inserted}`);
+  }
+  if (progress.errors != null) {
+    parts.push(`错误 ${progress.errors}`);
+  }
+  if (progress.symbol) {
+    parts.push(progress.symbol);
+  }
+  return parts.join("  ");
 }
 
 const colorPos = "#e74c3c";
@@ -596,9 +618,59 @@ async function loadDataPage() {
   const logEl = document.getElementById("job-log");
   const daysEl = document.getElementById("ingest-days");
   const statusEl = document.getElementById("data-status");
+  const progressWrap = document.getElementById("job-progress");
+  const progressFill = document.getElementById("job-progress-fill");
+  const progressMeta = document.getElementById("job-progress-meta");
+  let tdxAvailable = false;
+  let jobBusy = false;
+
+  function setBusy(busy) {
+    jobBusy = busy;
+    ingestBtn.disabled = busy || !tdxAvailable;
+    calendarBtn.disabled = busy;
+  }
+
+  function renderProgress(job) {
+    const progress = job && job.kind === "ingest" ? job.progress : null;
+    if (!progressWrap || !progressFill || !progressMeta) {
+      return;
+    }
+    if (!progress || progress.total == null) {
+      progressWrap.hidden = true;
+      progressFill.style.width = "0%";
+      progressMeta.textContent = "";
+      return;
+    }
+    const total = Number(progress.total) || 0;
+    const current = Number(progress.current) || 0;
+    const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+    progressWrap.hidden = false;
+    progressFill.style.width = `${pct}%`;
+    progressMeta.textContent = formatIngestProgress(progress);
+  }
+
+  function renderJob(job) {
+    logEl.textContent = formatJobLog(job);
+    renderProgress(job);
+  }
+
+  async function followJob() {
+    setBusy(true);
+    try {
+      const job = await waitForJob(renderJob);
+      renderJob(job);
+      await refresh();
+    } catch (error) {
+      logEl.textContent = error.message;
+    } finally {
+      setBusy(false);
+      ingestBtn.disabled = !tdxAvailable;
+    }
+  }
 
   async function refresh() {
     const status = await fetchJson("/api/data/status");
+    tdxAvailable = Boolean(status.tdx_available);
     statusEl.textContent =
       `行情最新日 ${status.daily_bar_max_date || "-"}，覆盖 ${status.daily_bar_security_count} 只；` +
       `日历最新日 ${status.calendar_max_date || "-"}` +
@@ -613,38 +685,50 @@ async function loadDataPage() {
       `<div class="metric-card"><div class="label">${esc(card.label)}</div><div class="value ${card.cls}">${esc(card.value)}</div>${card.sub ? `<div class="sub ${card.cls}">${esc(card.sub)}</div>` : ""}</div>`
     ).join("");
     tdxEl.textContent = status.tdx_message || "";
-    ingestBtn.disabled = !status.tdx_available;
+    ingestBtn.disabled = jobBusy || !tdxAvailable;
+    calendarBtn.disabled = jobBusy;
   }
 
   ingestBtn.addEventListener("click", async () => {
     logEl.textContent = "正在增量更新…";
+    renderProgress(null);
+    setBusy(true);
     try {
       await fetchJson("/api/data/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ days: Number(daysEl.value || 5) }),
       });
-      const job = await waitForJob();
-      logEl.textContent = formatJobLog(job);
-      await refresh();
+      await followJob();
     } catch (error) {
       logEl.textContent = error.message;
+      setBusy(false);
+      ingestBtn.disabled = !tdxAvailable;
     }
   });
 
   calendarBtn.addEventListener("click", async () => {
     logEl.textContent = "正在同步日历…";
+    renderProgress(null);
+    setBusy(true);
     try {
       await fetchJson("/api/data/calendar", { method: "POST" });
-      const job = await waitForJob();
-      logEl.textContent = formatJobLog(job);
-      await refresh();
+      await followJob();
     } catch (error) {
       logEl.textContent = error.message;
+      setBusy(false);
+      ingestBtn.disabled = !tdxAvailable;
     }
   });
 
   await refresh();
+  const existing = await fetchJson("/api/jobs/current");
+  if (existing && existing.status === "running") {
+    renderJob(existing);
+    await followJob();
+  } else if (existing) {
+    renderJob(existing);
+  }
 }
 
 async function loadSelectPage() {

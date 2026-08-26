@@ -27,7 +27,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+import time
+from typing import Any, Callable, List, Optional
 
 import duckdb
 import pandas as pd
@@ -492,6 +493,7 @@ class TdxQuantIngestionService:
         test_only: bool = False,
         skip_hsl: bool = False,
         batch_size: int = 50,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> TdxQuantIngestionSummary:
         """Incremental ingest from TDXQuant; supplements baidu/ths in daily_bar."""
         summary = TdxQuantIngestionSummary(
@@ -557,6 +559,34 @@ class TdxQuantIngestionService:
 
             pbar = tqdm(total=len(pool), desc="Ingest", unit="stock", ncols=100)
             total_batches = (len(pool) + batch_size - 1) // batch_size
+            last_report_at = 0.0
+            total_stocks = len(pool)
+
+            def report_progress(symbol: str | None = None) -> None:
+                nonlocal last_report_at
+                if progress_callback is None:
+                    return
+                current = int(pbar.n)
+                now = time.time()
+                if (
+                    current not in (0, 1, total_stocks)
+                    and current % 10 != 0
+                    and (now - last_report_at) < 0.5
+                ):
+                    return
+                last_report_at = now
+                progress_callback(
+                    {
+                        "current": current,
+                        "total": total_stocks,
+                        "fetched": summary.fetched,
+                        "inserted": summary.inserted,
+                        "errors": summary.errors,
+                        "symbol": symbol,
+                    }
+                )
+
+            report_progress()
 
             for batch_idx in range(total_batches):
                 si = batch_idx * batch_size
@@ -579,6 +609,7 @@ class TdxQuantIngestionService:
                         if df is None or df.empty:
                             summary.skipped_empty += 1
                             pbar.update(1)
+                            report_progress(symbol)
                             continue
 
                         # Drop NaN OHLC rows
@@ -586,6 +617,7 @@ class TdxQuantIngestionService:
                         if df.empty:
                             summary.skipped_empty += 1
                             pbar.update(1)
+                            report_progress(symbol)
                             continue
 
                         summary.fetched += len(df)
@@ -616,6 +648,7 @@ class TdxQuantIngestionService:
 
                         if df_target.empty:
                             pbar.update(1)
+                            report_progress(symbol)
                             continue
 
                         inserted = self.upsert_daily_bar(df_target, security_id)
@@ -632,11 +665,13 @@ class TdxQuantIngestionService:
                         inserted=summary.inserted,
                         errs=summary.errors,
                     )
+                    report_progress(symbol)
 
                 # Commit per batch
                 self.conn.commit()
 
             pbar.close()
+            report_progress()
             return summary
         finally:
             self.close_tdxquant()

@@ -69,6 +69,7 @@ def _job_payload(snapshot: JobSnapshot | None) -> dict[str, Any] | None:
         "events": snapshot.events,
         "result": snapshot.result,
         "error": snapshot.error,
+        "progress": snapshot.progress,
     }
 
 
@@ -84,11 +85,18 @@ def _iso_or_none(value: date | None) -> str | None:
     return value.isoformat()
 
 
-def _default_ingest(db_path: Path, *, start_date: str, end_date: str) -> dict[str, Any]:
+def _default_ingest(
+    db_path: Path,
+    *,
+    start_date: str,
+    end_date: str,
+    progress_callback: Callable[..., None] | None = None,
+) -> dict[str, Any]:
     summary = TdxQuantIngestionService(db_path=db_path).ingest(
         start_date=start_date,
         end_date=end_date,
         only_main_board=True,
+        progress_callback=progress_callback,
     )
     return {
         "inserted": summary.inserted,
@@ -263,7 +271,12 @@ def create_app(
     app.state.job_slot = slot
     app.state.tdx_probe = tdx_probe
     app.state.ingest_fn = ingest_fn or (
-        lambda **kwargs: _default_ingest(resolved_db, start_date=kwargs["start_date"], end_date=kwargs["end_date"])
+        lambda **kwargs: _default_ingest(
+            resolved_db,
+            start_date=kwargs["start_date"],
+            end_date=kwargs["end_date"],
+            progress_callback=kwargs.get("progress_callback"),
+        )
     )
     app.state.calendar_fn = calendar_fn or (lambda **kwargs: _default_calendar(resolved_db))
     app.state.strategies_dir = resolved_strategies
@@ -306,15 +319,18 @@ def create_app(
                 snapshot = slot.snapshot()
             last_count = -1
             last_status = None
+            last_progress = None
             while True:
                 snapshot = slot.snapshot()
                 payload = _job_payload(snapshot)
                 count = 0 if snapshot is None else len(snapshot.events)
                 status = None if snapshot is None else snapshot.status
-                if count != last_count or status != last_status:
+                progress_key = None if snapshot is None or snapshot.progress is None else snapshot.progress.get("current")
+                if count != last_count or status != last_status or progress_key != last_progress:
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                     last_count = count
                     last_status = status
+                    last_progress = progress_key
                 if snapshot is None or snapshot.status != "running":
                     break
                 time.sleep(0.15)
@@ -328,11 +344,16 @@ def create_app(
 
         def worker(emit):
             emit("开始增量更新行情", {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()})
+
+            def on_progress(payload: dict[str, Any]) -> None:
+                emit("ingest_progress", {"kind": "progress", **payload})
+
             result = app.state.ingest_fn(
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 db_path=resolved_db,
                 days=body.days,
+                progress_callback=on_progress,
             )
             emit("增量更新完成", result)
             return result

@@ -26,6 +26,7 @@ class JobSnapshot:
     events: list[dict[str, Any]]
     result: dict[str, Any] | None
     error: str | None
+    progress: dict[str, Any] | None = None
 
 
 class JobSlot:
@@ -37,6 +38,7 @@ class JobSlot:
         self._events: list[dict[str, Any]] = []
         self._result: dict[str, Any] | None = None
         self._error: str | None = None
+        self._progress: dict[str, Any] | None = None
 
     def try_start(
         self,
@@ -53,9 +55,13 @@ class JobSlot:
             self._events = []
             self._result = None
             self._error = None
+            self._progress = None
 
         def emit(message: str, payload: dict | None = None) -> None:
             with self._lock:
+                if payload is not None and payload.get("kind") == "progress":
+                    self._progress = payload
+                    return
                 self._events.append({"message": message, "payload": payload})
 
         def run() -> None:
@@ -84,4 +90,5 @@ class JobSlot:
                 events=list(self._events),
                 result=self._result,
                 error=self._error,
+                progress=None if self._progress is None else dict(self._progress),
             )
