@@ -101,6 +101,8 @@ class _OpenPosition:
     shares: int
     buy_amount: Decimal
     buy_time: datetime | None = None
+    buy_cost: Decimal = Decimal("0")
+    gross_buy_amount: Decimal | None = None
 
 
 def strategy_label(loaded: LoadedStrategyConfig) -> str:
@@ -637,6 +639,10 @@ def _quantize_money(value: Decimal) -> Decimal:
     return value.quantize(MONEY_QUANTIZE)
 
 
+def _fee(amount: Decimal, rate: Decimal) -> Decimal:
+    return _quantize_money(amount * rate / Decimal("100"))
+
+
 def _lookup_price(
     price_cache: dict[tuple[str, date], tuple[Decimal | None, Decimal | None]],
     symbol: str,
@@ -770,7 +776,9 @@ def _build_strategy_backtest_summary(
             ending_assets=current_total_assets,
             trade_days=trade_days,
         ),
-        transaction_costs_included=False,
+        transaction_costs_included=any(getattr(request, name) for name in ("commission_rate", "stamp_tax_rate", "transfer_fee_rate", "buy_slippage_rate", "sell_slippage_rate")),
+        total_transaction_costs=_quantize_money(sum((trade.buy_cost + trade.sell_cost for trade in trades), start=Decimal("0"))),
+        costs_included=any(getattr(request, name) for name in ("commission_rate", "stamp_tax_rate", "transfer_fee_rate", "buy_slippage_rate", "sell_slippage_rate")),
     )
 
 
@@ -867,6 +875,11 @@ def run_loaded_strategy_backtest(
         min_score_gap=defaults.min_score_gap,
         market_filter_enabled=bool(defaults.market_filter and defaults.market_filter.enabled),
         intraday_stop_loss_enabled=defaults.intraday_stop_loss_enabled,
+        commission_rate=defaults.commission_rate,
+        stamp_tax_rate=defaults.stamp_tax_rate,
+        transfer_fee_rate=defaults.transfer_fee_rate,
+        buy_slippage_rate=defaults.buy_slippage_rate,
+        sell_slippage_rate=defaults.sell_slippage_rate,
     )
 
     if resume_state is not None:
@@ -1049,7 +1062,9 @@ def run_loaded_strategy_backtest(
                     remaining_positions.append(position)
                     continue
 
-                sell_amount = effective_sell_price * Decimal(position.shares)
+                gross_sell_amount = effective_sell_price * (Decimal("1") - request.sell_slippage_rate / Decimal("100")) * Decimal(position.shares)
+                sell_cost = _fee(gross_sell_amount, request.commission_rate + request.stamp_tax_rate + request.transfer_fee_rate)
+                sell_amount = gross_sell_amount - sell_cost
                 unsettled_cash += sell_amount
                 sell_dt = (
                     datetime.combine(current_date, time(9, 30))
@@ -1075,6 +1090,10 @@ def run_loaded_strategy_backtest(
                         exit_reason=exit_reason,
                         buy_time=position.buy_time,
                         sell_time=sell_dt,
+                        buy_cost=position.buy_cost,
+                        gross_buy_amount=position.gross_buy_amount,
+                        sell_cost=sell_cost,
+                        gross_sell_amount=gross_sell_amount,
                     )
                 )
 
@@ -1105,9 +1124,10 @@ def run_loaded_strategy_backtest(
                 if any(position.symbol == candidate.symbol for position in open_positions):
                     continue
 
-                buy_price, _ = _lookup_price(price_cache, candidate.symbol, current_date)
-                if buy_price is None:
+                raw_buy_price, _ = _lookup_price(price_cache, candidate.symbol, current_date)
+                if raw_buy_price is None:
                     continue
+                buy_price = raw_buy_price * (Decimal("1") + request.buy_slippage_rate / Decimal("100"))
 
                 # T+1: only settled_cash is available for buying, not pending sell proceeds
                 current_total_assets = settled_cash + unsettled_cash + current_market_value
@@ -1120,7 +1140,9 @@ def run_loaded_strategy_backtest(
                     continue
 
                 shares = lots * 100
-                buy_amount = buy_price * Decimal(shares)
+                gross_buy_amount = buy_price * Decimal(shares)
+                buy_cost = _fee(gross_buy_amount, request.commission_rate + request.transfer_fee_rate)
+                buy_amount = gross_buy_amount + buy_cost
                 settled_cash -= buy_amount
                 current_market_value += buy_price * Decimal(shares)
                 buy_dt = datetime.combine(current_date, time(9, 30))
@@ -1135,6 +1157,8 @@ def run_loaded_strategy_backtest(
                         shares=shares,
                         buy_amount=buy_amount,
                         buy_time=buy_dt,
+                        buy_cost=buy_cost,
+                        gross_buy_amount=gross_buy_amount,
                     )
                 )
                 daily_buys += 1
@@ -1198,6 +1222,8 @@ def run_loaded_strategy_backtest(
                     exit_reason="open_at_end",
                     buy_time=position.buy_time,
                     sell_time=final_dt,
+                    buy_cost=position.buy_cost,
+                    gross_buy_amount=position.gross_buy_amount,
                 )
             )
 

@@ -114,6 +114,8 @@ def echo_strategy_backtest_report(report: StrategyBacktestReport) -> None:
     typer.echo(f"Total return (%): {report.summary.total_return_pct}")
     typer.echo(f"Annualized return (%): {report.summary.annualized_return_pct}")
     typer.echo(f"Transaction costs included: {report.summary.transaction_costs_included}")
+    typer.echo(f"Total transaction costs: {report.summary.total_transaction_costs}")
+    typer.echo(f"Costs included: {report.summary.costs_included}")
 
     for trade in report.trades:
         typer.echo(
@@ -123,6 +125,7 @@ def echo_strategy_backtest_report(report: StrategyBacktestReport) -> None:
             f"buy_price={trade.buy_price}\tsell_price={trade.sell_price}\t"
             f"shares={trade.shares}\tlots={trade.lots}\tbuy_amount={trade.buy_amount}\t"
             f"sell_amount={trade.sell_amount}\tholding_days={trade.holding_days}\t"
+            f"buy_cost={trade.buy_cost}\tsell_cost={trade.sell_cost}\t"
             f"return_pct={trade.return_pct}\tstatus={trade.status}\texit_reason={trade.exit_reason}"
         )
 

@@ -111,6 +111,10 @@ def _deserialize_resume_state(payload: dict[str, Any]) -> StrategyBacktestResume
             exit_reason=item.get("exit_reason"),
             buy_time=_parse_optional_datetime(item.get("buy_time")),
             sell_time=_parse_optional_datetime(item.get("sell_time")),
+            buy_cost=_parse_decimal(item.get("buy_cost", "0")),
+            sell_cost=_parse_decimal(item.get("sell_cost", "0")),
+            gross_buy_amount=None if item.get("gross_buy_amount") in (None, "") else _parse_decimal(item["gross_buy_amount"]),
+            gross_sell_amount=None if item.get("gross_sell_amount") in (None, "") else _parse_decimal(item["gross_sell_amount"]),
         )
         for item in payload.get("closed_trades", [])
     )
@@ -542,6 +546,7 @@ class ExperimentStore:
                 artifact_dir,
                 "summary.json",
                 {
+                    "schema_version": 2,
                     "request": report.request,
                     "summary": report.summary,
                     "metrics": all_metrics,

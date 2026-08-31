@@ -203,6 +203,8 @@ def build_strategy_backtest_metrics(
         "total_trades": report.summary.total_trade_count,
         "closed_trades": report.summary.closed_trade_count,
         "open_positions": report.summary.open_position_count,
+        "total_transaction_costs": _decimal_to_float(report.summary.total_transaction_costs),
+        "costs_included": 1.0 if report.summary.costs_included else 0.0,
     }
 
 
@@ -237,4 +239,3 @@ def build_strategy_yearly_metrics(
             "average_trade_return_pct": _mean(trade_returns),
         }
     return yearly
-

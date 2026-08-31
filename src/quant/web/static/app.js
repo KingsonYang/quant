@@ -189,6 +189,11 @@ const PARAM_LABELS = {
   position_size_pct: "仓位比例(%)",
   take_profit_pct: "止盈(%)",
   stop_loss_pct: "止损(%)",
+  commission_rate: "佣金(%)",
+  stamp_tax_rate: "印花税(%)",
+  transfer_fee_rate: "过户费(%)",
+  buy_slippage_rate: "买入滑点(%)",
+  sell_slippage_rate: "卖出滑点(%)",
 };
 
 let charts = {};
@@ -288,6 +293,8 @@ function extractSummary(report) {
     max_drawdown_pct: num(metrics.max_drawdown_pct),
     cash: num(summary.current_cash_balance),
     market_value: num(summary.current_market_value),
+    total_transaction_costs: num(summary.total_transaction_costs ?? metrics.total_transaction_costs),
+    costs_included: summary.costs_included ?? Boolean(metrics.costs_included),
     holding_period: summary.holding_period ?? request.holding_period,
     request,
     snapshot,
@@ -340,6 +347,7 @@ function renderMetricCards(summary) {
     { label: "年化收益率", value: fmtSignedPct(summary.annualized_return_pct), cls: signCls(summary.annualized_return_pct) },
     { label: "已实现收益", value: fmtSignedMoney(summary.realized_profit), cls: signCls(summary.realized_profit) },
     { label: "未实现收益", value: fmtSignedMoney(summary.unrealized_profit), cls: signCls(summary.unrealized_profit) },
+    { label: "交易成本", value: fmtMoney(summary.total_transaction_costs), cls: "neutral", sub: summary.costs_included ? "已计入收益" : "未计入" },
     { label: "最大回撤", value: fmtSignedPct(summary.max_drawdown_pct == null ? null : -Math.abs(summary.max_drawdown_pct)), cls: "neg" },
     {
       label: "已平仓交易",

@@ -424,6 +424,11 @@ class StrategyBacktestDefaults(BaseModel):
     min_score_gap: Decimal | None = None
     market_filter: MarketRegimeFilterConfig | None = None
     intraday_stop_loss_enabled: bool = False
+    commission_rate: Decimal = Decimal("0")
+    stamp_tax_rate: Decimal = Decimal("0")
+    transfer_fee_rate: Decimal = Decimal("0")
+    buy_slippage_rate: Decimal = Decimal("0")
+    sell_slippage_rate: Decimal = Decimal("0")
 
 
 OptimizationValue = str | int | float | Decimal

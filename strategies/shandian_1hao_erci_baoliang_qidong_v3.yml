@@ -28,6 +28,12 @@ strategy_backtest:  # 组合/资金回测默认值；考虑现金、仓位数量
   take_profit_pct: 20  # 止盈阈值，收益率达到该百分比时卖出。
   stop_loss_pct: -10  # 止损阈值，收益率低于该百分比时卖出；通常为负数。
   selection_top_n: 2  # 每天按 selection 排序后，只允许前 N 只进入买入候选。
+  # A 股常见券商费率口径，单位均为百分比；当前模型暂不支持最低佣金 5 元。
+  commission_rate: 0.03  # 买卖佣金 0.03%。
+  stamp_tax_rate: 0.05  # 卖出印花税 0.05%。
+  transfer_fee_rate: 0.001  # 买卖过户费 0.001%。
+  buy_slippage_rate: 0  # 暂不额外假设买入滑点。
+  sell_slippage_rate: 0  # 暂不额外假设卖出滑点。
 optimization:  # 参数优化配置；quant optimize 会读取这里的候选参数。
   enabled: true  # 是否启用该策略的参数搜索配置。
   search_space:  # 搜索空间；key 是参数路径，value 是候选值列表。
