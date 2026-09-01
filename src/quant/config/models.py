@@ -54,6 +54,7 @@ class SecondVolumeLaunchParams(BaseModel):
     d0_change_min_pct: Decimal = Decimal("5.0")
     d1_change_min_pct: Decimal = Decimal("5.0")
     d1_prev2_max_change_pct: Decimal = Decimal("10.0")
+    platform_min_low_ratio: Decimal = Decimal("1.0")
     low_position_window: int = 60
     max_d0_position_pct: Decimal | None = None
     enable_v2_filter: bool = False  # V2 过滤开关 (3 条规律)

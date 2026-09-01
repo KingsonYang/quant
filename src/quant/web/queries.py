@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +18,13 @@ class DataStatus:
     calendar_lagging: bool
     tdx_available: bool
     tdx_message: str
+
+def load_stock_kline(db_path: Path, symbol: str, center_date: date) -> dict:
+    start = center_date - timedelta(days=31)
+    end = center_date + timedelta(days=31)
+    with duckdb.connect(str(db_path), read_only=True) as connection:
+        rows = connection.execute("""SELECT d.trade_date, COALESCE(d.open_qfq,d.open_price), COALESCE(d.high_qfq,d.high_price), COALESCE(d.low_qfq,d.low_price), COALESCE(d.close_qfq,d.close_price), d.volume, s.name FROM daily_bar d JOIN security_master s ON s.security_id=d.security_id WHERE s.symbol=? AND d.trade_date BETWEEN ? AND ? ORDER BY d.trade_date""", [symbol, start, end]).fetchall()
+    return {"symbol": symbol, "name": rows[0][6] if rows else None, "center_date": center_date.isoformat(), "requested_start": start.isoformat(), "requested_end": end.isoformat(), "data": [{"trade_date": r[0].isoformat(), "open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]} for r in rows]}
 
 
 def probe_tdxquant(tqcenter_path: Path | None = None) -> tuple[bool, str]:

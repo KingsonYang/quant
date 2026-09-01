@@ -26,7 +26,7 @@ from quant.experiments.store import DEFAULT_EXPERIMENTS_DIR, ExperimentStore
 from quant.ingest.tdxquant import TdxQuantIngestionService
 from quant.strategy_runtime import run_loaded_strategy_backtest, run_strategy_selection
 from quant.web.jobs import JobBusyError, JobKind, JobSlot, JobSnapshot
-from quant.web.queries import DataStatus, load_data_status
+from quant.web.queries import DataStatus, load_data_status, load_stock_kline
 
 
 WEB_DIR = Path(__file__).resolve().parent
@@ -236,7 +236,7 @@ def _load_backtest_payload(store: ExperimentStore, run_id: int) -> dict[str, Any
         "metrics": detail.metrics,
         "equity": equity,
         "drawdown": _drawdown_series(equity),
-        "trades": _read_csv_rows(artifact_dir / "trades.csv"),
+        "trades": sorted(_read_csv_rows(artifact_dir / "trades.csv"), key=lambda row: (row.get("selection_date") or row.get("buy_date") or "", row.get("sell_date") or "", row.get("symbol") or ""), reverse=True),
         "open_positions": open_positions,
         "parameter_snapshot": detail.parameter_snapshot,
         "yearly_metrics": yearly_metrics,
@@ -384,6 +384,15 @@ def create_app(
             }
             for item in loaded_list
         ]
+
+    @app.get("/api/stock-kline")
+    def stock_kline(symbol: str, center_date: date):
+        if not symbol or len(symbol) > 16:
+            raise HTTPException(status_code=400, detail="股票代码无效")
+        result = load_stock_kline(resolved_db, symbol, center_date)
+        if not result["data"]:
+            raise HTTPException(status_code=404, detail="指定窗口没有日线数据")
+        return result
 
     @app.post("/api/select")
     def start_select(body: SelectRequest):

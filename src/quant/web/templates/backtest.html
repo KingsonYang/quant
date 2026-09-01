@@ -1,25 +1,5 @@
 {% extends "base.html" %}
 {% block title %}策略回测 · quant 工作台{% endblock %}
-{% block extra_head %}
-<script>
-(function () {
-  var srcs = [
-    "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js",
-    "https://cdn.staticfile.org/echarts/5.5.0/echarts.min.js"
-  ];
-  var i = 0;
-  function load() {
-    if (i >= srcs.length) return;
-    var s = document.createElement("script");
-    s.src = srcs[i++];
-    s.onload = function () { window.__ECHARTS_READY__ = true; };
-    s.onerror = function () { load(); };
-    document.head.appendChild(s);
-  }
-  load();
-})();
-</script>
-{% endblock %}
 {% block content %}
 <div class="container" id="backtest-page">
   <div class="header">

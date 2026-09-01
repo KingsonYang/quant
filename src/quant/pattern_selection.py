@@ -181,7 +181,7 @@ picked AS (
   FROM between_lows bl
   JOIN d1 ON d1.security_id = bl.security_id
   WHERE bl.between_days <= ?
-    AND bl.min_low_between > bl.d0_low
+    AND bl.min_low_between >= bl.d0_low * {platform_min_low_ratio}
     AND d1.change_pct > ?
     AND d1.prev1_volume IS NOT NULL
     AND d1.volume >= ? * d1.prev1_volume
@@ -328,6 +328,7 @@ def _pattern_sql(params: SecondVolumeLaunchParams) -> str:
     sql = PATTERN_SQL_TEMPLATE.format(
         lookback_calendar_days=params.lookback_calendar_days,
         low_position_window=params.low_position_window,
+        platform_min_low_ratio=float(params.platform_min_low_ratio),
         low_position_filter=low_position_filter,
     )
     if params.enable_v2_filter:

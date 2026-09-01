@@ -119,12 +119,65 @@ function renderTable(table, rows, columns) {
       const td = document.createElement("td");
       const value = row[column.key];
       td.textContent = value == null ? "" : String(value);
+      if (column.key === "name" && row.symbol) { td.dataset.klineSymbol = row.symbol; td.dataset.klineDate = row.selection_date || row.selectionDate || row.buy_date || row.d0_date || ""; td.style.cursor = "pointer"; }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
 }
+
+const klineCache = new Map();
+
+function klineOption(bars) {
+  const dates = bars.map((item) => item.trade_date);
+  return {
+    tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+    grid: [
+      { left: 60, right: 16, top: 24, bottom: "42%" },
+      { left: 60, right: 16, top: "68%", bottom: 32 },
+    ],
+    xAxis: [
+      { type: "category", data: dates, gridIndex: 0, axisLine: { onZero: false }, splitLine: { show: false } },
+      { type: "category", data: dates, gridIndex: 1, axisLine: { onZero: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false } },
+    ],
+    yAxis: [
+      { scale: true, gridIndex: 0 },
+      { type: "value", scale: true, gridIndex: 1, splitNumber: 2 },
+    ],
+    series: [
+      { type: "candlestick", data: bars.map((item) => [item.open, item.close, item.low, item.high]) },
+      { type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: bars.map((item) => item.volume) },
+    ],
+  };
+}
+
+async function showKline(symbol, centerDate) {
+  const drawer = document.getElementById("kline-drawer");
+  if (!drawer) return;
+  drawer.hidden = false;
+  document.getElementById("kline-title").textContent = symbol + " K线";
+  const key = symbol + ":" + centerDate;
+  let data = klineCache.get(key);
+  try {
+    document.getElementById("kline-status").textContent = "加载中…";
+    data = data || await fetchJson(`/api/stock-kline?symbol=${encodeURIComponent(symbol)}&center_date=${centerDate}`);
+    klineCache.set(key, data);
+    document.getElementById("kline-status").textContent = `${data.requested_start} 至 ${data.requested_end}`;
+    setChartOption("kline-chart", "kline", klineOption(data.data));
+    setTimeout(() => {
+      if (charts.kline) {
+        charts.kline.resize();
+      }
+    }, 50);
+  } catch (e) {
+    document.getElementById("kline-status").textContent = e.message;
+  }
+}
+document.addEventListener("click", e => { const el=e.target.closest("[data-kline-symbol]"); if(el) showKline(el.dataset.klineSymbol,el.dataset.klineDate); if(e.target.id === "kline-close") document.getElementById("kline-drawer").hidden=true; });
+let klineHoverTimer;
+document.addEventListener("mouseover", e => { const el=e.target.closest("[data-kline-symbol]"); if (!el || window.matchMedia("(max-width: 768px)").matches) return; clearTimeout(klineHoverTimer); klineHoverTimer=setTimeout(()=>showKline(el.dataset.klineSymbol,el.dataset.klineDate),500); });
+document.addEventListener("mouseout", e => { if(e.target.closest("[data-kline-symbol]")) clearTimeout(klineHoverTimer); });
 
 function formatJobLog(job) {
   if (!job) {
@@ -409,7 +462,7 @@ function renderTradeTable(trades) {
     row.innerHTML = `
       <td>${index + 1}</td>
       <td style="font-weight:600;">${esc(trade.code)}</td>
-      <td>${esc(trade.name)}</td>
+      <td data-kline-symbol="${esc(trade.code)}" data-kline-date="${trade.selectionDate || trade.buyDate || ""}" style="cursor:pointer">${esc(trade.name)}</td>
       <td>${trade.buyDate || "—"}</td>
       <td>${trade.sellDate || "—"}</td>
       <td>${trade.buyPrice != null ? Number(trade.buyPrice).toFixed(2) : "—"}</td>
@@ -781,7 +834,8 @@ async function loadSelectPage() {
         return;
       }
       emptyEl.textContent = `命中 ${result.candidate_count} 只`;
-      renderTable(table, result.candidates || [], [
+      const candidates = (result.candidates || []).map((candidate) => ({ ...candidate, selection_date: result.trade_date }));
+      renderTable(table, candidates, [
         { key: "symbol", label: "代码" },
         { key: "name", label: "名称" },
         { key: "d0_date", label: "d0_date" },
