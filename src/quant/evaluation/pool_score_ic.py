@@ -17,7 +17,10 @@ _model_cache: dict[str, Any] | None = None
 
 
 def _find_model_file() -> Path | None:
+    model_dir = Path(__file__).resolve().parent / "models"
     candidates = [
+        model_dir / "ic_model_v87.json",
+        model_dir / "ic_model_v14.json",
         Path(__file__).resolve().parent.parent.parent.parent / "results" / "ic_model_v87.json",
         Path.cwd() / "results" / "ic_model_v87.json",
         Path(__file__).resolve().parent.parent.parent.parent / "results" / "ic_model_v14.json",

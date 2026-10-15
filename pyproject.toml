@@ -26,6 +26,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
 "quant.web" = ["templates/*.html", "static/*.css", "static/*.js"]
+"quant.evaluation" = ["models/*.json"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

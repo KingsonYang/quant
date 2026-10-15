@@ -52,6 +52,7 @@ _v20_lookup = None
 
 def _find_file(name, subdir="results"):
     candidates = [
+        Path(__file__).resolve().parent / "models" / name,
         Path(__file__).resolve().parent.parent.parent.parent / subdir / name,
         Path.cwd() / subdir / name,
     ]
