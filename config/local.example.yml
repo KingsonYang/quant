@@ -1,0 +1,9 @@
+# 复制本文件为 config/local.yml，再填本机路径。local.yml 不提交。
+# 环境变量优先于本文件：QUANT_TQCENTER_PATH、QUANT_TDX_PATH。
+# 也可以用 QUANT_LOCAL_CONFIG 指向别的配置文件。
+tdxquant:
+  # 通达信安装目录里的接口脚本。入库会按这个绝对路径加载。
+  # 它的上两级目录必须有 TPythClient.dll，所以不能改成仓库里的 scripts/tdx/tqcenter.py。
+  tqcenter_path: ""
+  # 通达信客户端。当前日线入库用 Python 模块路径作为连接标识，不读取这一项。
+  tdx_path: ""

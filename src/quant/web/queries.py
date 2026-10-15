@@ -7,7 +7,7 @@ from typing import Callable
 
 import duckdb
 
-from quant.ingest.tdxquant import DEFAULT_TQCENTER_PATH
+from quant.config.local_settings import missing_tqcenter_message, resolve_tdxquant_paths
 
 
 @dataclass(frozen=True)
@@ -150,7 +150,9 @@ def load_market_sentiment(db_path: Path, trade_date: date) -> dict:
 
 
 def probe_tdxquant(tqcenter_path: Path | None = None) -> tuple[bool, str]:
-    path = tqcenter_path or DEFAULT_TQCENTER_PATH
+    path = tqcenter_path or resolve_tdxquant_paths().tqcenter_path
+    if path is None:
+        return False, missing_tqcenter_message()
     try:
         import importlib.util
 

@@ -304,10 +304,10 @@ def register(app: typer.Typer) -> None:
             "--include-all",
             help="Include non-main-board stocks (default: main board only).",
         ),
-        tqcenter_path: Path = typer.Option(
-            Path("D:/SoftWare/tdx/PYPlugins/user/tqcenter.py"),
+        tqcenter_path: Path | None = typer.Option(
+            None,
             "--tqcenter-path",
-            help="Explicit path to tqcenter.py (since it is not in the quant-backtest environment).",
+            help="tqcenter.py 路径。默认读 QUANT_TQCENTER_PATH 或 config/local.yml。",
         ),
         target_table: str = typer.Option(
             "daily_bar",
@@ -382,10 +382,10 @@ def register(app: typer.Typer) -> None:
             "--include-all",
             help="Include non-main-board stocks (default: main board only).",
         ),
-        tqcenter_path: Path = typer.Option(
-            Path("D:/SoftWare/tdx/PYPlugins/user/tqcenter.py"),
+        tqcenter_path: Path | None = typer.Option(
+            None,
             "--tqcenter-path",
-            help="Explicit path to tqcenter.py.",
+            help="tqcenter.py 路径。默认读 QUANT_TQCENTER_PATH 或 config/local.yml。",
         ),
         skip_hsl: bool = typer.Option(
             True,

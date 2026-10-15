@@ -39,11 +39,6 @@ SOURCE_NAME = "tdxquant"
 PARSER_VERSION = "tdxquant-get-market-data-v1"
 
 DEFAULT_DB_PATH = Path("data") / "quant.duckdb"
-DEFAULT_TDX_PATH = Path("D:/SoftWare/tdx/TdxW.exe")
-
-# 老板"老板"硬性约束：tqcenter 不在 quant-backtest 环境里
-# 必须显式指定 tqcenter.py 的位置（用户已配置）
-DEFAULT_TQCENTER_PATH = Path("D:/SoftWare/tdx/PYPlugins/user/tqcenter.py")
 
 BATCH_SIZE = 100
 
@@ -72,14 +67,17 @@ class TdxQuantIngestionService:
 
     def __init__(
         self,
-        db_path: Path = DEFAULT_DB_PATH,
-        tdx_path: Path = DEFAULT_TDX_PATH,
-        tqcenter_path: Path = DEFAULT_TQCENTER_PATH,
+        db_path: Path | None = None,
+        tdx_path: Path | None = None,
+        tqcenter_path: Path | None = None,
         target_table: str = "daily_bar",  # 老板"老板"新增：默认 daily_bar，可改临时表
     ):
-        self.db_path = db_path
-        self.tdx_path = tdx_path
-        self.tqcenter_path = tqcenter_path
+        from quant.config.local_settings import resolve_tdxquant_paths
+
+        paths = resolve_tdxquant_paths(tdx_path=tdx_path, tqcenter_path=tqcenter_path)
+        self.db_path = db_path or DEFAULT_DB_PATH
+        self.tdx_path = paths.tdx_path
+        self.tqcenter_path = paths.tqcenter_path
         self.target_table = target_table  # 老板"老板"新增：写入目标表
         self.tq = None
         self.conn = None
@@ -94,8 +92,12 @@ class TdxQuantIngestionService:
         - finally 关闭
         """
         try:
-            # 老板修复：用 importlib.util 显式加载 tqcenter（不依赖 PYTHONPATH）
+            # 按配置路径加载通达信安装目录里的 tqcenter，不依赖 PYTHONPATH。
             import importlib.util
+            from quant.config.local_settings import missing_tqcenter_message
+
+            if self.tqcenter_path is None:
+                raise FileNotFoundError(missing_tqcenter_message())
             if not self.tqcenter_path.exists():
                 raise FileNotFoundError(f"tqcenter.py 不存在: {self.tqcenter_path}")
 
@@ -878,9 +880,15 @@ def ingest_tdxquant(
     test_only: bool = False,
     skip_hsl: bool = False,
     batch_size: int = 50,
+    tqcenter_path: Path | None = None,
+    tdx_path: Path | None = None,
 ) -> TdxQuantIngestionSummary:
     """CLI entry point (called by commands/ingest.py)."""
-    service = TdxQuantIngestionService(db_path=db_path)
+    service = TdxQuantIngestionService(
+        db_path=db_path,
+        tqcenter_path=tqcenter_path,
+        tdx_path=tdx_path,
+    )
     return service.ingest(
         start_date=start_date,
         end_date=end_date,
@@ -896,7 +904,7 @@ def backfill_prices(
     db_path: Path = DEFAULT_DB_PATH,
     stock: Optional[str] = None,
     only_main_board: bool = True,
-    tqcenter_path: Path = DEFAULT_TQCENTER_PATH,
+    tqcenter_path: Path | None = None,
     skip_hsl: bool = True,
     batch_size: int = 50,
 ) -> TdxQuantIngestionSummary:
