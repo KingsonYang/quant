@@ -47,7 +47,6 @@ IX_PAIRS = [
 
 _ic_weights = None
 _feature_list = None
-_v20_lookup = None
 
 
 def _find_file(name, subdir="results"):
@@ -74,23 +73,6 @@ def _get_ic_weights():
     _ic_weights = data["ic_weights"]
     _feature_list = data["feature_list"]
     return _ic_weights, _feature_list
-
-
-def _get_v20_lookup():
-    global _v20_lookup
-    if _v20_lookup is not None:
-        return _v20_lookup
-    import csv
-    p = _find_file("v20_all_scores.csv")
-    lookup = {}
-    if p is not None:
-        with open(p, newline="") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                key = (row["symbol"], row["selection_date"])
-                lookup[key] = float(row["v20_ens_score"])
-    _v20_lookup = lookup
-    return lookup
 
 
 def _safe_float(val):
@@ -176,27 +158,4 @@ def compute_pool_score_v3(candidates, extra_features=None):
     else:
         raw = [0.5] * n
     return _pct_rank(raw)
-
-
-def lookup_v20_scores(candidates):
-    lookup = _get_v20_lookup()
-    if not lookup:
-        return [None] * len(candidates)
-    scores = []
-    for cand in candidates:
-        key = (cand.symbol, str(cand.selection_date))
-        scores.append(lookup.get(key))
-    return scores
-
-
-def compute_pool_score_v3_hybrid(candidates, extra_features=None):
-    n = len(candidates)
-    if n == 0:
-        return []
-    if n == 1:
-        return [0.5]
-    v20_scores = lookup_v20_scores(candidates)
-    if all(s is not None for s in v20_scores):
-        return v20_scores
-    return compute_pool_score_v3(candidates, extra_features)
 

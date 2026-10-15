@@ -2266,11 +2266,11 @@ def select_pattern_candidates_with_connection(
 
     if selection_config.sort_by == "pool_score_v3" and candidates:
         from quant.evaluation.pool_features import extract_daily_bar_features
-        from quant.evaluation.pool_score_v3 import compute_pool_score_v3_hybrid
+        from quant.evaluation.pool_score_v3 import compute_pool_score_v3
         from dataclasses import replace as dc_replace
 
         extra_feats = extract_daily_bar_features(connection, candidates)
-        v3_scores = compute_pool_score_v3_hybrid(candidates, extra_feats)
+        v3_scores = compute_pool_score_v3(candidates, extra_feats)
         candidates = [
             dc_replace(c, pool_score_v3=v3_scores[i])
             for i, c in enumerate(candidates)
