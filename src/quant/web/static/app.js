@@ -67,7 +67,15 @@
       let detail = `${response.status} ${response.statusText}`;
       try {
         const errorJson = await response.json();
-        detail = errorJson.detail || detail;
+        if (Array.isArray(errorJson.detail)) {
+          detail = errorJson.detail
+            .map((item) => item.msg || JSON.stringify(item))
+            .join("；");
+        } else if (typeof errorJson.detail === "string") {
+          detail = errorJson.detail;
+        } else if (errorJson.detail) {
+          detail = JSON.stringify(errorJson.detail);
+        }
       } catch (_) {}
       throw new Error(detail);
     }
@@ -576,7 +584,9 @@
 
     if (ingestBtn) {
       ingestBtn.addEventListener("click", () => {
-        const days = parseInt(ingestDays ? ingestDays.value : "5", 10) || 5;
+        let days = parseInt(ingestDays ? ingestDays.value : "5", 10);
+        if (!Number.isFinite(days)) days = 5;
+        days = Math.min(30, Math.max(1, days));
         executeDataTask("/api/data/ingest", { days });
       });
     }

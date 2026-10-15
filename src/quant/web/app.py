@@ -6,12 +6,13 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 import httpx
 
@@ -48,6 +49,33 @@ templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
 class IngestRequest(BaseModel):
     days: int = Field(default=5, ge=1, le=30)
+
+
+def _ingest_payload(raw: bytes) -> Any:
+    text = raw.decode("utf-8-sig").strip()
+    if not text:
+        return {}
+    if text[0] in "{[":
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="拉取请求不是合法 JSON") from exc
+    parsed = parse_qs(text, keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items()}
+
+
+def _ingest_days(payload: Any) -> int:
+    if payload is None:
+        payload = {}
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail='拉取请求必须是 JSON 对象，例如 {"days": 5}')
+    data = dict(payload)
+    if data.get("days") in (None, ""):
+        data.pop("days", None)
+    try:
+        return IngestRequest.model_validate(data).days
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail="增量天数要在 1 到 30 之间") from exc
 
 
 class SelectRequest(BaseModel):
@@ -399,9 +427,10 @@ def create_app(
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     @app.post("/api/data/ingest")
-    def start_ingest(body: IngestRequest):
+    async def start_ingest(request: Request):
+        chosen_days = _ingest_days(_ingest_payload(await request.body()))
         end_date = date.today()
-        start_date = end_date - timedelta(days=body.days)
+        start_date = end_date - timedelta(days=chosen_days)
 
         def worker(emit):
             emit("开始增量更新行情", {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()})
@@ -413,7 +442,7 @@ def create_app(
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 db_path=resolved_db,
-                days=body.days,
+                days=chosen_days,
                 progress_callback=on_progress,
             )
             emit("增量更新完成", result)
