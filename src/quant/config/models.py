@@ -59,6 +59,15 @@ class SecondVolumeLaunchParams(BaseModel):
     max_d0_position_pct: Decimal | None = None
     enable_v2_filter: bool = False  # V2 过滤开关 (3 条规律)
 
+class AllTimeHighParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lookback_calendar_days: int = 400
+    min_listed_days: int = 250
+    recent_window_days: int = 250
+    require_main_board: bool = True
+    exclude_st: bool = True
+
+
 
 class LimitUpPullbackMa5ReclaimParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -290,6 +299,7 @@ class PatternSelectionConfig(BaseModel):
     type: Literal["pattern_sql"]
     pattern_id: Literal[
         "second_volume_launch_v1",
+        "all_time_high_v1",
         "limit_up_pullback_ma5_reclaim_v1",
         "limit_up_first_pullback_ma5_reclaim_v1",
         "first_limit_up_trend_continuation_v1",
@@ -299,6 +309,7 @@ class PatternSelectionConfig(BaseModel):
     ]
     params: (
         SecondVolumeLaunchParams
+        | AllTimeHighParams
         | LimitUpPullbackMa5ReclaimParams
         | LimitUpFirstPullbackMa5ReclaimParams
         | FirstLimitUpTrendContinuationParams
@@ -316,6 +327,8 @@ class PatternSelectionConfig(BaseModel):
             self.params, SecondVolumeLaunchParams
         ):
             raise ValueError("second_volume_launch_v1 requires SecondVolumeLaunchParams.")
+        if self.pattern_id == "all_time_high_v1" and not isinstance(self.params, AllTimeHighParams):
+            raise ValueError("all_time_high_v1 requires AllTimeHighParams.")
         if self.pattern_id == "limit_up_pullback_ma5_reclaim_v1" and not isinstance(
             self.params, LimitUpPullbackMa5ReclaimParams
         ):

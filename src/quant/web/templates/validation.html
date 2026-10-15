@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}稳健性体检中心 - QuantWeb Pro{% endblock %}
+
+{% block content %}
+<div class="workbench-container">
+  <!-- Page Header -->
+  <div class="page-title-group" style="margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <h1 class="page-title" style="margin-bottom: 0;">🛡️ 策略稳健性与防过拟合体检中心</h1>
+      <span class="tag-badge bg-emerald">Anti-Overfitting & Walk-Forward</span>
+    </div>
+    <div class="page-subtitle">利用严苛的样本外盲测（OOS）、滑动窗口前向推进（Walk-Forward）与参数邻域微扰，识别策略真实 Alpha 与过拟合陷阱</div>
+  </div>
+
+  <!-- Control Card -->
+  <div class="card" style="margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+      <div class="field-group">
+        <label class="field-label" for="val-strategy">目标策略</label>
+        <select id="val-strategy" class="form-control"></select>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="val-mode">体检模式</label>
+        <select id="val-mode" class="form-control">
+          <option value="all">全能综合体检 (All · 样本分割 + 微扰)</option>
+          <option value="split">样本内外盲测 (Train/Val/Test Split)</option>
+          <option value="walk-forward">前向步进滚动 (Walk-Forward)</option>
+          <option value="perturbation">参数微扰敏感度 (Perturbation)</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="val-split-ratios">样本划分比例 (训练:验证:测试)</label>
+        <input type="text" id="val-split-ratios" class="form-control tnum" value="6,2,2" placeholder="如 6,2,2 或 7,0,3">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="val-start-date">体检开始日期</label>
+        <input type="date" id="val-start-date" class="form-control tnum">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="val-end-date">体检结束日期</label>
+        <input type="date" id="val-end-date" class="form-control tnum">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="val-perturbations">微扰轮数 (Perturbations)</label>
+        <input type="number" id="val-perturbations" class="form-control tnum" value="10" min="4" max="30" step="2">
+      </div>
+    </div>
+
+    <!-- Quick Ranges & Action -->
+    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px;">
+      <div class="field-group" style="margin-bottom: 0;">
+        <span class="field-label" style="display: inline-block; margin-right: 8px;">推荐体检周期:</span>
+        <div class="quick-ranges" style="display: inline-flex;">
+          <button type="button" class="btn-range val-range" data-range="2y">近2年检验</button>
+          <button type="button" class="btn-range val-range" data-range="3y">近3年检验</button>
+          <button type="button" class="btn-range val-range" data-range="5y">近5年检验</button>
+          <button type="button" class="btn-range val-range" data-range="all">全量历史</button>
+        </div>
+      </div>
+      <button id="val-run-btn" type="button" class="btn btn-primary">
+        <span>🛡️</span> <span id="val-run-text">启动稳健性体检</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Progress Banner -->
+  <div id="val-progress-banner" class="regime-banner" style="display: none; margin-bottom: 20px;">
+    <div class="regime-info-group">
+      <span class="status-dot warning"></span>
+      <div>
+        <div style="font-weight: 700; font-size: 14px;" id="val-progress-title">跨周期稳健性体检中...</div>
+        <div style="font-size: 12px; color: var(--text-muted);" id="val-progress-detail">正在进行样本内外盲测与微扰模拟</div>
+      </div>
+    </div>
+    <div style="width: 260px;">
+      <div class="progress-track">
+        <div id="val-progress-bar" class="progress-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Dashboard -->
+  <div id="val-results-pane" style="display: none;">
+    <!-- Diagnosis Header Banner -->
+    <div class="regime-banner" id="val-diagnosis-banner" style="margin-bottom: 20px;">
+      <div class="regime-info-group">
+        <div style="font-size: 32px;" id="val-diagnosis-icon">🛡️</div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-size: 18px; font-weight: 700;" id="val-diagnosis-title">体检结论: 超额稳健型</div>
+            <span id="val-diagnosis-tag" class="tag-badge bg-pos">建议实盘关注</span>
+          </div>
+          <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;" id="val-diagnosis-desc">
+            样本外收益衰减处于合理区间，参数邻域未见尖锐断崖，具备较强的跨周期环境穿透力。
+          </div>
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">稳健性评分 (Stability Score)</div>
+        <div style="font-size: 28px; font-weight: 800; font-family: var(--font-mono); color: var(--accent-cyan);" id="val-stability-score">-</div>
+      </div>
+    </div>
+
+    <!-- Health Breakdown KPIs -->
+    <div class="hero-kpi-grid" style="margin-bottom: 20px;">
+      <div class="kpi-card hero">
+        <div class="kpi-label">训练集得分 (Train Score)</div>
+        <div class="kpi-value tnum" id="val-train-score">-</div>
+        <div class="kpi-subtext">样本内优化上限</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">验证集得分 (Validation Score)</div>
+        <div class="kpi-value tnum" id="val-valid-score">-</div>
+        <div class="kpi-subtext">中期过渡检验</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">测试集盲测得分 (Test Score)</div>
+        <div class="kpi-value tnum text-cyan" id="val-test-score">-</div>
+        <div class="kpi-subtext">真实样本外表现</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">样本外衰减率 (Decay Rate)</div>
+        <div class="kpi-value tnum" id="val-overfit-penalty">-</div>
+        <div class="kpi-subtext">过拟合惩罚估算</div>
+      </div>
+    </div>
+
+    <!-- Split Segments Table -->
+    <div class="card" id="val-split-card" style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h2 class="chart-title">📅 样本内外分段回测明细 (Split Segments)</h2>
+        <span class="tag-badge bg-neutral">时间盲测检验</span>
+      </div>
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>分段标签</th>
+              <th>起止日期</th>
+              <th>综合得分</th>
+              <th>总收益率</th>
+              <th>年化收益</th>
+              <th>最大回撤</th>
+              <th>夏普比率</th>
+              <th>胜率</th>
+              <th>交易笔数</th>
+            </tr>
+          </thead>
+          <tbody id="val-split-tbody">
+            <!-- Rendered by app.js -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Perturbation Table -->
+    <div class="card" id="val-perturb-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h2 class="chart-title">🌊 参数微扰高原检验 (Perturbation Plateau Check)</h2>
+        <span class="tag-badge bg-neutral">敏感度微调分析</span>
+      </div>
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width: 70px;">试验</th>
+              <th>综合评分</th>
+              <th>微扰参数变更</th>
+              <th>总收益率</th>
+              <th>最大回撤</th>
+              <th>夏普比率</th>
+              <th>胜率</th>
+            </tr>
+          </thead>
+          <tbody id="val-perturb-tbody">
+            <!-- Rendered by app.js -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+version: 1
+strategy:
+  name: all_time_high_v1
+  display_name: 历史新高突破
+  description: 当日最高价创上市以来历史新高
+selection:
+  type: pattern_sql
+  pattern_id: all_time_high_v1
+  sort_by: composite_score
+  sort_order: desc
+  params:
+    lookback_calendar_days: 400
+    min_listed_days: 250
+    recent_window_days: 250
+    require_main_board: true
+    exclude_st: true
+strategy_backtest:
+  holding_period: 1
+  max_positions: 1
+  max_daily_buys: 1
+  initial_capital: 100000
+  position_size_pct: 50
+  take_profit_pct: 20
+  stop_loss_pct: -10

@@ -15,6 +15,7 @@ from quant.config.models import (
     MainForceAccumulationParams,
     PatternSelectionConfig,
     SecondVolumeLaunchParams,
+    AllTimeHighParams,
     TrendMainWaveRelayParams,
 )
 from quant.selection import (
@@ -817,6 +818,10 @@ def _select_second_volume_launch_for_date(
         )
         for row in rows
     ]
+
+def _select_all_time_high_for_date(connection, selection_date: date, params: AllTimeHighParams) -> list[PatternSelectionCandidate]:
+    rows = connection.execute("""WITH b AS (SELECT d.security_id,d.trade_date,COALESCE(d.high_qfq,d.high_price) high_price,s.symbol,s.name,s.board,s.list_status,s.list_date FROM daily_bar d JOIN security_master s ON s.security_id=d.security_id WHERE d.trade_date<=?) SELECT symbol,name,trade_date,high_price,prior_high FROM (SELECT *,MAX(high_price) OVER(PARTITION BY security_id ORDER BY trade_date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) prior_high FROM b) x WHERE trade_date=? AND prior_high IS NOT NULL AND high_price>=prior_high AND (?=false OR board IN ('主板','main','MAIN') OR board IS NULL) AND list_status='listed' AND (?=false OR (name NOT LIKE '%ST%' AND name NOT LIKE '%退%')) AND (list_date IS NULL OR date_diff('day',list_date,?)>=?)""", [selection_date, selection_date, params.require_main_board, params.exclude_st, selection_date, params.min_listed_days]).fetchall()
+    return [PatternSelectionCandidate(symbol=r[0], name=r[1], selection_date=selection_date, d0_date=r[2], composite_score=float((r[3]/r[4]-1)*100)) for r in rows]
 
 
 def _select_limit_up_pullback_ma5_reclaim_for_date(
@@ -2205,6 +2210,8 @@ def select_pattern_candidates_with_connection(
             selection_date=selection_date,
             params=selection_config.params,
         )
+    elif selection_config.pattern_id == "all_time_high_v1":
+        candidates = _select_all_time_high_for_date(connection, selection_date, selection_config.params)
     elif selection_config.pattern_id == "limit_up_pullback_ma5_reclaim_v1":
         candidates = _select_limit_up_pullback_ma5_reclaim_for_date(
             connection=connection,

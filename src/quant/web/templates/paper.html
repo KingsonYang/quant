@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}模拟盘与实战信号 - QuantWeb Pro{% endblock %}
+
+{% block content %}
+<div class="workbench-container">
+  <!-- Page Header -->
+  <div class="page-title-group" style="margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h1 class="page-title" style="margin-bottom: 0;">📋 模拟盘跟踪与每日交易计划</h1>
+          <span class="tag-badge bg-cyan">Paper Trading & Signal Dispatch</span>
+        </div>
+        <div class="page-subtitle">每日收盘自动推演次日实战委托计划，锁定精确止盈止损线，支持钉钉/飞书/PushPlus多端推送</div>
+      </div>
+      <button id="open-webhook-modal-btn" type="button" class="btn btn-secondary">
+        <span>🔔</span> <span>消息推送配置</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Control Card -->
+  <div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;">
+      <div class="field-group" style="min-width: 260px; margin-bottom: 0;">
+        <label class="field-label" for="paper-strategy">追踪策略</label>
+        <select id="paper-strategy" class="form-control"></select>
+      </div>
+      <div class="field-group" style="min-width: 180px; margin-bottom: 0;">
+        <label class="field-label" for="paper-trade-date">信号基准日 (最新交易日)</label>
+        <input type="date" id="paper-trade-date" class="form-control tnum">
+      </div>
+      <button id="paper-plan-btn" type="button" class="btn btn-primary">
+        <span>🎯</span> <span>推演明日买入计划</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Hero KPI Grid -->
+  <div class="hero-kpi-grid" style="margin-bottom: 20px;" id="paper-hero-grid">
+    <div class="kpi-card hero">
+      <div class="kpi-label">明日入选标的数</div>
+      <div class="kpi-value tnum text-cyan" id="plan-candidate-count">-</div>
+      <div class="kpi-subtext" id="plan-strategy-name">等待推演</div>
+    </div>
+    <div class="kpi-card hero">
+      <div class="kpi-label">建议单票仓位</div>
+      <div class="kpi-value tnum" id="plan-position-size">-</div>
+      <div class="kpi-subtext">严格资金头寸管理</div>
+    </div>
+    <div class="kpi-card hero">
+      <div class="kpi-label">预期止盈目标</div>
+      <div class="kpi-value tnum text-pos" id="plan-take-profit">-</div>
+      <div class="kpi-subtext">达到触发离场指令</div>
+    </div>
+    <div class="kpi-card hero">
+      <div class="kpi-label">硬止损防线</div>
+      <div class="kpi-value tnum text-neg" id="plan-stop-loss">-</div>
+      <div class="kpi-subtext">跌破无条件止损</div>
+    </div>
+  </div>
+
+  <!-- Tomorrow's Action Plan Table -->
+  <div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h2 class="chart-title">🚀 次日开盘实战执行清单 (Action Plan)</h2>
+        <span class="tag-badge bg-cyan" id="plan-date-badge">T+1 撮合推演</span>
+      </div>
+      <button id="push-signal-btn" type="button" class="btn btn-secondary btn-sm">
+        <span>📲</span> <span>一键推送信号到手机</span>
+      </button>
+    </div>
+    <div class="table-container">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>股票代码</th>
+            <th>标的名称</th>
+            <th>基准收盘价</th>
+            <th>综合打分</th>
+            <th>建议建仓价格上限 (+3%)</th>
+            <th>目标止盈价</th>
+            <th>硬止损价</th>
+            <th>仓位权重</th>
+            <th>集合竞价操作指引</th>
+            <th style="width: 90px; text-align: right;">复盘</th>
+          </tr>
+        </thead>
+        <tbody id="paper-plan-tbody">
+          <tr>
+            <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 32px;">
+              请选择策略并点击“推演明日买入计划”
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Virtual Positions / Paper Holdings Card -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h2 class="chart-title">💼 当前模拟持仓跟踪 (Virtual Holdings)</h2>
+        <span class="tag-badge bg-neutral">T+1 状态跟踪</span>
+      </div>
+      <span class="tnum" style="font-size: 13px; color: var(--text-muted);">自动与最近回测实验持仓对齐</span>
+    </div>
+    <div class="table-container">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>标的代码</th>
+            <th>买入日期</th>
+            <th>买入价格</th>
+            <th>持仓股数</th>
+            <th>已持天数</th>
+            <th>离止盈位</th>
+            <th>离止损位</th>
+            <th>当前状态</th>
+          </tr>
+        </thead>
+        <tbody id="paper-holdings-tbody">
+          <tr>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              当前无在手未平仓标的或策略处于空仓等待信号期
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Configuration Modal -->
+<div id="webhook-modal" class="modal-backdrop">
+  <div class="modal-card" style="max-width: 520px; background: var(--surface-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 20px;">🔔</span>
+        <h3 style="margin: 0; font-size: 16px;">移动端消息推送配置 (Webhook)</h3>
+      </div>
+      <button id="webhook-modal-close" class="kline-close-btn" type="button">✕</button>
+    </div>
+    <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5;">
+      支持钉钉机器人、企业微信、飞书 Webhook 或 Server酱 / PushPlus 接口。配置后，每日收盘即可接收明日买入计划提醒。
+    </div>
+    <div class="field-group" style="margin-bottom: 16px;">
+      <label class="field-label" for="webhook-url-input">Webhook 接口地址</label>
+      <input type="url" id="webhook-url-input" class="form-control" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+    </div>
+    <div id="webhook-status-msg" style="display: none; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 16px;"></div>
+    <div style="display: flex; justify-content: flex-end; gap: 10px;">
+      <button id="webhook-test-send-btn" type="button" class="btn btn-secondary">
+        <span>📡</span> <span>测试发送</span>
+      </button>
+      <button id="webhook-save-btn" type="button" class="btn btn-primary">
+        <span>💾</span> <span>保存配置</span>
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}

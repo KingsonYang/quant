@@ -1,28 +1,112 @@
 {% extends "base.html" %}
-{% block title %}选股 · quant 工作台{% endblock %}
+{% block title %}策略选股雷达 - QuantWeb Pro{% endblock %}
 {% block content %}
-<div class="container" id="select-page">
-  <div class="header">
-    <h1>选股</h1>
-    <div class="subtitle">按 YAML 策略查看某日候选股</div>
-    <div class="run-info" id="select-meta"></div>
+<div class="page-header">
+  <div class="page-title-group">
+    <h1><span>🎯</span> 策略选股雷达</h1>
+    <div class="subtitle">全市场形态扫描、量价突破强度评分、大盘情绪环境对齐与实时穿透</div>
   </div>
-  <div class="toolbar">
-    <label>策略
-      <select id="select-strategy"></select>
-    </label>
-    <label>交易日
-      <input id="select-date" type="date">
-    </label>
-    <button id="select-btn" class="btn btn-primary" type="button">选股</button>
-  </div>
-  <p id="select-empty" class="empty-hint"></p>
-  <p id="select-error" class="warn-text"></p>
-  <div class="chart-section">
-    <div class="chart-title">候选列表</div>
-    <div class="table-wrap">
-      <table id="select-table"></table>
-    </div>
+  <div class="header-meta">
+    <span class="tag" id="select-current-strategy">未选择策略</span>
+    <span class="tag tnum" id="select-current-date-badge">最新交易日</span>
   </div>
 </div>
+
+<!-- Market Breadth / Sentiment Banner -->
+<div class="regime-banner" id="market-sentiment-banner">
+  <div class="regime-info-group">
+    <div class="regime-stat-item">
+      <span class="regime-stat-label">全市场情绪温度</span>
+      <span class="regime-stat-value" id="market-sentiment-status">
+        <span class="status-dot"></span> <span id="market-sentiment-text">分析中...</span>
+      </span>
+    </div>
+    <div class="regime-stat-item">
+      <span class="regime-stat-label">涨跌分布 (全A)</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="regime-stat-value tnum pos" id="market-up-count">--</span>
+        <div class="breadth-track">
+          <div class="breadth-fill-up" id="market-breadth-fill" style="width: 50%;"></div>
+        </div>
+        <span class="regime-stat-value tnum neg" id="market-down-count">--</span>
+      </div>
+    </div>
+    <div class="regime-stat-item">
+      <span class="regime-stat-label">极端极值</span>
+      <span class="regime-stat-value tnum">
+        涨停 <strong class="pos" id="market-limit-up">--</strong> / 跌停 <strong class="neg" id="market-limit-down">--</strong>
+      </span>
+    </div>
+    <div class="regime-stat-item">
+      <span class="regime-stat-label">全市场均值</span>
+      <span class="regime-stat-value tnum" id="market-avg-change">--%</span>
+    </div>
+  </div>
+  <div style="font-size: 12px; color: var(--text-dim);" id="market-regime-hint">
+    数据源自 DuckDB 981万+ 日线实时聚合
+  </div>
+</div>
+
+<!-- Toolbar -->
+<section class="toolbar-card">
+  <div class="toolbar-inputs">
+    <div class="field-group">
+      <label class="field-label" for="select-strategy">策略选择</label>
+      <select id="select-strategy" class="form-control"></select>
+    </div>
+    <div class="field-group">
+      <label class="field-label" for="select-date">选股交易日</label>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-date-prev" title="前一交易日">◀</button>
+        <input type="date" id="select-date" class="form-control tnum">
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-date-next" title="后一交易日">▶</button>
+      </div>
+    </div>
+  </div>
+  <button id="run-select-btn" type="button" class="btn btn-primary">
+    <span>🔍</span> 扫描执行选股
+  </button>
+</section>
+
+<!-- Candidate Results Card -->
+<section class="data-card" id="select-result">
+  <div class="data-header">
+    <div class="data-title">
+      <span>📋</span> 策略候选股票池
+      <span class="tag-badge bg-pos tnum" id="select-count-badge">0 只标的</span>
+    </div>
+    <div class="data-controls">
+      <div class="search-input-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="select-search-input" class="search-input" placeholder="筛选选股结果...">
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="export-select-btn" title="导出选股结果到 CSV">
+        <span>📥</span> 导出 CSV
+      </button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="pro-table" id="select-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>代码</th>
+          <th>名称</th>
+          <th>选股基准日 (d0)</th>
+          <th>综合评分 (Composite)</th>
+          <th>Pool V3 得分</th>
+          <th>形态分支</th>
+          <th>连板状态</th>
+          <th>首板 / 末板</th>
+          <th>假突破标记</th>
+          <th>走势穿透</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="11" style="text-align:center; color:var(--text-dim);">请选择策略和交易日并点击“扫描执行选股”</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

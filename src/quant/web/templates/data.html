@@ -1,28 +1,109 @@
 {% extends "base.html" %}
-{% block title %}数据 · quant 工作台{% endblock %}
+{% block title %}数据资产中心 - QuantWeb Pro{% endblock %}
 {% block content %}
-<div class="container" id="data-page">
-  <div class="header">
-    <h1>数据</h1>
-    <div class="subtitle">TDXQuant 增量补行情，并同步交易日历</div>
+<div class="page-header">
+  <div class="page-title-group">
+    <h1><span>🗄️</span> 市场数据资产监控中心</h1>
+    <div class="subtitle">DuckDB 千万级时序行情库、交易日历对齐状态、通达信链路健康度与增量同步引擎</div>
   </div>
-  <div class="summary-grid" id="data-cards"></div>
-  <div class="toolbar">
-    <label>增量天数
-      <input id="ingest-days" type="number" min="1" max="30" value="5">
-    </label>
-    <button id="ingest-btn" class="btn btn-primary" type="button">增量更新行情</button>
-    <button id="calendar-btn" class="btn btn-secondary" type="button">同步交易日历</button>
+  <div class="header-meta">
+    <span class="tag">DuckDB 存储</span>
+    <span class="tag">TDX 通达信高速通道</span>
   </div>
-  <p id="tdx-message" class="empty-hint"></p>
-  <p id="data-status" hidden></p>
-  <div class="chart-section">
-    <div class="chart-title">任务日志</div>
-    <div class="progress-wrap" id="job-progress" hidden>
-      <div class="progress-meta" id="job-progress-meta"></div>
-      <div class="progress-track"><div class="progress-fill" id="job-progress-fill"></div></div>
+</div>
+
+<!-- Data Asset Telemetry Cards -->
+<section class="hero-kpi-grid">
+  <div class="hero-card accent-blue">
+    <div class="hero-header">
+      <span class="hero-label">日线时序最新日期</span>
+      <span class="hero-badge bg-neutral tnum" id="data-bar-status-badge">Daily Bar</span>
     </div>
-    <pre class="job-log" id="job-log">尚无任务</pre>
+    <div class="hero-val tnum" id="stat-daily-date">--</div>
+    <div class="hero-sub">
+      <span>最后行情收盘记录日</span>
+    </div>
   </div>
+
+  <div class="hero-card accent-cyan">
+    <div class="hero-header">
+      <span class="hero-label">全市场覆盖标的数</span>
+      <span class="hero-badge bg-neutral tnum">A 股全市场</span>
+    </div>
+    <div class="hero-val tnum" id="stat-covered-stocks">--</div>
+    <div class="hero-sub">
+      <span>包含主板 / 创业板 / 科创板</span>
+    </div>
+  </div>
+
+  <div class="hero-card accent-pos">
+    <div class="hero-header">
+      <span class="hero-label">交易日历最新日期</span>
+      <span class="hero-badge bg-neutral tnum" id="stat-calendar-badge">日历正常</span>
+    </div>
+    <div class="hero-val tnum" id="stat-calendar-date">--</div>
+    <div class="hero-sub">
+      <span id="stat-calendar-warning">日历与行情同步中</span>
+    </div>
+  </div>
+
+  <div class="hero-card accent-neg">
+    <div class="hero-header">
+      <span class="hero-label">TDX 行情链路状态</span>
+      <span class="hero-badge bg-neutral" id="stat-tdx-badge">探测中</span>
+    </div>
+    <div class="hero-val" style="font-size: 20px;" id="stat-tdx-status">检查中...</div>
+    <div class="hero-sub">
+      <span id="stat-tdx-detail">等待通达信节点连接响应</span>
+    </div>
+  </div>
+</section>
+
+<!-- Actions Toolbar -->
+<section class="toolbar-card">
+  <div class="toolbar-inputs">
+    <div class="field-group">
+      <label class="field-label" for="ingest-days">增量天数 (1-30 天)</label>
+      <input type="number" id="ingest-days" class="form-control tnum" min="1" max="30" value="5" style="width: 140px;">
+    </div>
+    <div style="font-size: 12px; color: var(--text-dim); max-width: 380px; align-self: center;">
+      提示: 增量拉取会自动从通达信本地/远程高速通道同步日线并计算复权因子。
+    </div>
+  </div>
+  <div style="display: flex; gap: 12px;">
+    <button id="calendar-btn" type="button" class="btn btn-secondary">
+      <span>📅</span> 更新交易日历
+    </button>
+    <button id="ingest-btn" type="button" class="btn btn-primary">
+      <span>⚡</span> 拉取增量行情
+    </button>
+  </div>
+</section>
+
+<!-- Task Console -->
+<section class="console-card">
+  <div class="console-header">
+    <div class="console-dots">
+      <div class="console-dot dot-red"></div>
+      <div class="console-dot dot-yellow"></div>
+      <div class="console-dot dot-green"></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span id="console-status-pill" class="status-dot"></span>
+      <span id="console-job-status">就绪 (IDLE)</span>
+    </div>
+    <div style="font-family: monospace;" id="console-task-id">-</div>
+  </div>
+  <div style="padding: 12px 18px 0 18px;">
+    <div class="progress-track" style="margin: 0;">
+      <div id="job-progress" class="progress-fill" style="width: 0%;"></div>
+    </div>
+  </div>
+  <pre id="job-log" class="console-body">系统已初始化，等待任务触发...</pre>
+</section>
+
+<!-- Backward Compatibility Containers (Hidden) -->
+<div style="display: none;">
+  <div id="data-status-text"></div>
 </div>
 {% endblock %}

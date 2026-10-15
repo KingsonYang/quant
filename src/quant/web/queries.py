@@ -19,12 +19,134 @@ class DataStatus:
     tdx_available: bool
     tdx_message: str
 
-def load_stock_kline(db_path: Path, symbol: str, center_date: date) -> dict:
-    start = center_date - timedelta(days=31)
-    end = center_date + timedelta(days=31)
+def load_stock_kline(
+    db_path: Path,
+    symbol: str,
+    center_date: date,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    if start_date is not None and end_date is not None:
+        start = start_date - timedelta(days=35)
+        end = end_date + timedelta(days=35)
+    else:
+        start = center_date - timedelta(days=45)
+        end = center_date + timedelta(days=45)
     with duckdb.connect(str(db_path), read_only=True) as connection:
-        rows = connection.execute("""SELECT d.trade_date, COALESCE(d.open_qfq,d.open_price), COALESCE(d.high_qfq,d.high_price), COALESCE(d.low_qfq,d.low_price), COALESCE(d.close_qfq,d.close_price), d.volume, s.name FROM daily_bar d JOIN security_master s ON s.security_id=d.security_id WHERE s.symbol=? AND d.trade_date BETWEEN ? AND ? ORDER BY d.trade_date""", [symbol, start, end]).fetchall()
-    return {"symbol": symbol, "name": rows[0][6] if rows else None, "center_date": center_date.isoformat(), "requested_start": start.isoformat(), "requested_end": end.isoformat(), "data": [{"trade_date": r[0].isoformat(), "open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]} for r in rows]}
+        rows = connection.execute(
+            """
+            SELECT d.trade_date,
+                   COALESCE(d.open_qfq, d.open_price),
+                   COALESCE(d.high_qfq, d.high_price),
+                   COALESCE(d.low_qfq, d.low_price),
+                   COALESCE(d.close_qfq, d.close_price),
+                   d.volume,
+                   s.name,
+                   d.ma5_price,
+                   d.ma10_price,
+                   d.ma20_price,
+                   d.turnover_ratio,
+                   d.change_pct
+            FROM daily_bar d
+            JOIN security_master s ON s.security_id = d.security_id
+            WHERE s.symbol = ? AND d.trade_date BETWEEN ? AND ?
+            ORDER BY d.trade_date
+            """,
+            [symbol, start, end],
+        ).fetchall()
+    return {
+        "symbol": symbol,
+        "name": rows[0][6] if rows else None,
+        "center_date": center_date.isoformat(),
+        "requested_start": start.isoformat(),
+        "requested_end": end.isoformat(),
+        "data": [
+            {
+                "trade_date": r[0].isoformat(),
+                "open": float(r[1]) if r[1] is not None else None,
+                "high": float(r[2]) if r[2] is not None else None,
+                "low": float(r[3]) if r[3] is not None else None,
+                "close": float(r[4]) if r[4] is not None else None,
+                "volume": int(r[5]) if r[5] is not None else 0,
+                "ma5": float(r[7]) if r[7] is not None else None,
+                "ma10": float(r[8]) if r[8] is not None else None,
+                "ma20": float(r[9]) if r[9] is not None else None,
+                "turnover_ratio": float(r[10]) if r[10] is not None else None,
+                "change_pct": float(r[11]) if r[11] is not None else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+def load_benchmark_series(db_path: Path, start_date: date, end_date: date) -> list[dict]:
+    with duckdb.connect(str(db_path), read_only=True) as connection:
+        tables = [r[0] for r in connection.execute("SHOW TABLES").fetchall()]
+        if "hs300_bar" not in tables:
+            return []
+        rows = connection.execute(
+            """
+            SELECT trade_date, close_price
+            FROM hs300_bar
+            WHERE trade_date BETWEEN ? AND ?
+            ORDER BY trade_date
+            """,
+            [start_date, end_date],
+        ).fetchall()
+    return [
+        {"trade_date": r[0].isoformat(), "close": float(r[1])}
+        for r in rows
+        if r[1] is not None
+    ]
+
+
+def load_market_sentiment(db_path: Path, trade_date: date) -> dict:
+    with duckdb.connect(str(db_path), read_only=True) as connection:
+        row = connection.execute(
+            """
+            SELECT count(*),
+                   sum(case when change_pct > 0 then 1 else 0 end),
+                   sum(case when change_pct < 0 then 1 else 0 end),
+                   sum(case when change_pct == 0 then 1 else 0 end),
+                   sum(case when change_pct >= 9.8 then 1 else 0 end),
+                   sum(case when change_pct <= -9.8 then 1 else 0 end),
+                   avg(change_pct)
+            FROM daily_bar
+            WHERE trade_date = ?
+            """,
+            [trade_date],
+        ).fetchone()
+    if not row or not row[0]:
+        return {"trade_date": trade_date.isoformat(), "has_data": False}
+    total, up, down, flat, limit_up, limit_down, avg_pct = row
+    up_cnt = int(up or 0)
+    down_cnt = int(down or 0)
+    total_cnt = int(total or 0)
+    up_ratio = round((up_cnt / total_cnt * 100), 1) if total_cnt else 0.0
+    if up_ratio >= 65:
+        sentiment = "强势多头"
+    elif up_ratio >= 55:
+        sentiment = "偏多震荡"
+    elif up_ratio >= 45:
+        sentiment = "多空平衡"
+    elif up_ratio >= 35:
+        sentiment = "偏空调整"
+    else:
+        sentiment = "冰点防守" 
+    return {
+        "trade_date": trade_date.isoformat(),
+        "has_data": True,
+        "total_count": total_cnt,
+        "up_count": up_cnt,
+        "down_count": down_cnt,
+        "flat_count": int(flat or 0),
+        "limit_up_count": int(limit_up or 0),
+        "limit_down_count": int(limit_down or 0),
+        "up_ratio": up_ratio,
+        "avg_change_pct": round(float(avg_pct or 0), 2),
+        "sentiment": sentiment,
+    }
 
 
 def probe_tdxquant(tqcenter_path: Path | None = None) -> tuple[bool, str]:

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}参数寻优工作台 - QuantWeb Pro{% endblock %}
+
+{% block content %}
+<div class="workbench-container">
+  <!-- Page Header -->
+  <div class="page-title-group" style="margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <h1 class="page-title" style="margin-bottom: 0;">⚡ 参数自动寻优工作台</h1>
+      <span class="tag-badge bg-cyan">AutoML / Grid & Random Search</span>
+    </div>
+    <div class="page-subtitle">基于历史行情对核心参数进行多维空间超参寻优，生成收益-回撤帕累托前沿散点与最优试验排行榜</div>
+  </div>
+
+  <!-- Control Panel Card -->
+  <div class="card" style="margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px;">
+      <div class="field-group">
+        <label class="field-label" for="opt-strategy">目标策略</label>
+        <select id="opt-strategy" class="form-control"></select>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="opt-method">寻优算法</label>
+        <select id="opt-method" class="form-control">
+          <option value="random">随机搜索 (Random Search · 推荐)</option>
+          <option value="grid">网格穷举 (Grid Search)</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="opt-max-trials">最大试验次数 (Trials)</label>
+        <input type="number" id="opt-max-trials" class="form-control tnum" value="30" min="5" max="200" step="5">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="opt-start-date">寻优开始日期</label>
+        <input type="date" id="opt-start-date" class="form-control tnum">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="opt-end-date">寻优结束日期</label>
+        <input type="date" id="opt-end-date" class="form-control tnum">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="opt-seed">随机种子 (Seed)</label>
+        <input type="number" id="opt-seed" class="form-control tnum" value="42">
+      </div>
+    </div>
+
+    <!-- Quick Ranges & Action -->
+    <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px;">
+      <div class="field-group" style="margin-bottom: 0;">
+        <span class="field-label" style="display: inline-block; margin-right: 8px;">快捷区间:</span>
+        <div class="quick-ranges" style="display: inline-flex;">
+          <button type="button" class="btn-range opt-range" data-range="6m">近半年</button>
+          <button type="button" class="btn-range opt-range" data-range="1y">近1年</button>
+          <button type="button" class="btn-range opt-range" data-range="2y">近2年</button>
+          <button type="button" class="btn-range opt-range" data-range="all">全量区间</button>
+        </div>
+      </div>
+      <button id="opt-run-btn" type="button" class="btn btn-primary">
+        <span>⚡</span> <span id="opt-run-text">启动参数寻优</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Search Space Preview Card -->
+  <div class="card" id="opt-space-card" style="margin-bottom: 20px; background: rgba(30, 41, 59, 0.4);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div style="font-weight: 700; font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+        📐 当前策略搜索空间维度 (Search Space Dimensions)
+      </div>
+      <span id="opt-space-count" class="tag-badge bg-neutral tnum">0 个超参维度</span>
+    </div>
+    <div id="opt-space-tags" style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <span class="tag-badge bg-neutral">选择策略后加载搜索空间...</span>
+    </div>
+  </div>
+
+  <!-- Progress Banner -->
+  <div id="opt-progress-banner" class="regime-banner" style="display: none; margin-bottom: 20px;">
+    <div class="regime-info-group">
+      <span class="status-dot warning"></span>
+      <div>
+        <div style="font-weight: 700; font-size: 14px;" id="opt-progress-title">超参搜索进行中...</div>
+        <div style="font-size: 12px; color: var(--text-muted);" id="opt-progress-detail">正在逐个评估参数组合</div>
+      </div>
+    </div>
+    <div style="width: 260px;">
+      <div class="progress-track">
+        <div id="opt-progress-bar" class="progress-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Dashboard (Hidden until ready) -->
+  <div id="opt-results-pane" style="display: none;">
+    <!-- Best Run Hero Cards -->
+    <div class="hero-kpi-grid" style="margin-bottom: 20px;">
+      <div class="kpi-card hero">
+        <div class="kpi-label">最优综合得分 (Best Score)</div>
+        <div class="kpi-value tnum text-cyan" id="best-score">-</div>
+        <div class="kpi-subtext" id="best-score-sub">Top 1 表现</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">最优累计收益率</div>
+        <div class="kpi-value tnum" id="best-return">-</div>
+        <div class="kpi-subtext" id="best-ann-return">年化 -</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">最优最大回撤</div>
+        <div class="kpi-value tnum text-neg" id="best-drawdown">-</div>
+        <div class="kpi-subtext">峰值回撤控制</div>
+      </div>
+      <div class="kpi-card hero">
+        <div class="kpi-label">最优夏普比率</div>
+        <div class="kpi-value tnum" id="best-sharpe">-</div>
+        <div class="kpi-subtext" id="best-winrate">胜率 -</div>
+      </div>
+    </div>
+
+    <!-- Pareto Frontier Bubble Chart -->
+    <div class="card" style="margin-bottom: 20px;">
+      <div class="chart-header">
+        <div>
+          <h2 class="chart-title">🎯 收益-回撤帕累托前沿气泡图 (Pareto Frontier)</h2>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+            横轴为累计收益率，纵轴为最大回撤（越低越优），气泡大小代表夏普比率，颜色由蓝到青代表综合评分。
+          </div>
+        </div>
+      </div>
+      <div id="opt-bubble-chart" style="height: 420px; width: 100%;"></div>
+    </div>
+
+    <!-- Top Trials Leaderboard Table -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 class="chart-title">🏆 试验排行榜 (Top Trials Leaderboard)</h2>
+        <span class="tag-badge bg-cyan" id="opt-trials-badge">Top 10 优选组合</span>
+      </div>
+      <div class="table-container">
+        <table class="table" id="opt-trials-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">排名</th>
+              <th style="width: 80px;">Run ID</th>
+              <th>综合得分</th>
+              <th>总收益率</th>
+              <th>年化收益</th>
+              <th>最大回撤</th>
+              <th>夏普比率</th>
+              <th>胜率</th>
+              <th>盈亏比</th>
+              <th>核心覆盖参数</th>
+              <th style="width: 130px; text-align: right;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="opt-trials-tbody">
+            <!-- Rendered by app.js -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

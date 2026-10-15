@@ -12,6 +12,8 @@ class JobKind(str, Enum):
     CALENDAR = "calendar"
     SELECT = "select"
     BACKTEST = "backtest"
+    OPTIMIZE = "optimize"
+    VALIDATE = "validate"
 
 
 class JobBusyError(RuntimeError):
