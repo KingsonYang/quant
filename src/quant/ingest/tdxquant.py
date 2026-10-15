@@ -41,6 +41,51 @@ PARSER_VERSION = "tdxquant-get-market-data-v1"
 DEFAULT_DB_PATH = Path("data") / "quant.duckdb"
 
 BATCH_SIZE = 100
+SH_MAIN_PREFIXES = ("600", "601", "603", "605")
+SZ_MAIN_PREFIXES = ("000", "001", "002", "003")
+SH_A_PREFIXES = SH_MAIN_PREFIXES + ("688", "689")
+SZ_A_PREFIXES = SZ_MAIN_PREFIXES + ("300", "301")
+
+
+def _as_stock_items(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        for key in ("Value", "Data", "List"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                return nested
+        return [value]
+    return []
+
+
+def _parse_tq_stock_item(item: Any) -> tuple[str, str, str] | None:
+    if isinstance(item, str):
+        code_text = item.strip().upper()
+        name = ""
+    elif isinstance(item, dict):
+        code_text = str(item.get("Code") or item.get("code") or "").strip().upper()
+        name = str(item.get("Name") or item.get("name") or "").strip()
+    else:
+        return None
+    if "." not in code_text:
+        return None
+    code, exchange = code_text.split(".", 1)
+    if exchange not in {"SH", "SZ"} or len(code) != 6 or not code.isdigit():
+        return None
+    return code, exchange, name
+
+
+def _matches_board(code: str, exchange: str, *, only_main_board: bool) -> bool:
+    if exchange == "SH":
+        prefixes = SH_MAIN_PREFIXES if only_main_board else SH_A_PREFIXES
+    elif exchange == "SZ":
+        prefixes = SZ_MAIN_PREFIXES if only_main_board else SZ_A_PREFIXES
+    else:
+        return False
+    return code.startswith(prefixes)
 
 
 @dataclass
@@ -129,15 +174,93 @@ class TdxQuantIngestionService:
             self.conn.close()
 
     # ============== 3. 加载股票池 ==============
+    def _canonical_symbol(self, symbol: str) -> str | None:
+        text = symbol.strip().upper()
+        if "." in text:
+            code, exchange = text.split(".", 1)
+            if exchange in {"SH", "SZ", "BJ"} and code.isdigit():
+                return f"{exchange}{code}"
+            return None
+        if text.startswith(("SH", "SZ", "BJ")) and text[2:].isdigit():
+            return text
+        if text.isdigit() and len(text) == 6:
+            if text.startswith(("60", "68", "90")):
+                return f"SH{text}"
+            if text.startswith(("00", "30", "20")):
+                return f"SZ{text}"
+        return None
+
+    def _ensure_security_id(self, symbol: str, name: str | None = None) -> int:
+        from quant.ingest.models import SecuritySeed
+        from quant.ingest.storage import DuckDBIngestionStore
+
+        exchange, code = symbol[:2], symbol[2:]
+        board = "主板" if _matches_board(code, exchange, only_main_board=True) else None
+        store = DuckDBIngestionStore(self.db_path)
+        return store.ensure_security(
+            self.conn,
+            SecuritySeed(
+                symbol=symbol,
+                exchange=exchange,
+                code=code,
+                name=(name or symbol).strip() or symbol,
+                market="ab",
+                board=board,
+                data_source=SOURCE_NAME,
+            ),
+        )
+
     def get_stock_pool(self, only_main_board: bool = True) -> pd.DataFrame:
-        sql = """
-            SELECT security_id, symbol, exchange, code, name
-            FROM security_master
-            WHERE list_status = 'listed'
-        """
-        if only_main_board:
-            sql += " AND market = 'ab'"
-        return self.conn.execute(sql).df()
+        """从通达信取当日股票池。沪深主板不读本地 security_master。"""
+        if self.tq is None:
+            raise RuntimeError("通达信未初始化，无法获取股票列表")
+        markets = ("7", "8") if only_main_board else ("50",)
+        items: list[Any] = []
+        for market in markets:
+            batch = _as_stock_items(self.tq.get_stock_list(market, list_type=1))
+            if not batch:
+                batch = _as_stock_items(self.tq.get_stock_list(market, list_type=0))
+            items.extend(batch)
+
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items:
+            parsed = _parse_tq_stock_item(item)
+            if parsed is None:
+                continue
+            code, exchange, name = parsed
+            if not _matches_board(code, exchange, only_main_board=only_main_board):
+                continue
+            symbol = f"{exchange}{code}"
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            rows.append(
+                {
+                    "security_id": self._ensure_security_id(symbol, name or None),
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "code": code,
+                    "name": name or symbol,
+                }
+            )
+        if rows:
+            self.conn.commit()
+        if not rows:
+            scope = "沪深主板" if only_main_board else "沪深A股"
+            raise RuntimeError(f"通达信没有返回{scope}股票")
+        print(f"通达信股票池: {len(rows)} 只{'沪深主板' if only_main_board else '沪深A股'}")
+        return pd.DataFrame(rows)
+
+    def _build_ingest_pool(self, stock: str | None, *, only_main_board: bool) -> pd.DataFrame:
+        if not stock:
+            return self.get_stock_pool(only_main_board=only_main_board)
+        symbol = self._canonical_symbol(stock)
+        if symbol is None:
+            raise RuntimeError(f"无法识别股票代码: {stock}")
+        security_id = self._ensure_security_id(symbol)
+        self.conn.commit()
+        return pd.DataFrame([{"security_id": security_id, "symbol": symbol}])
 
     def fetch_hsl(self, stock_code: str, start_date: str, end_date: str) -> dict:
         """
@@ -543,16 +666,7 @@ class TdxQuantIngestionService:
         self.init_tdxquant()
         self.connect_db()
         try:
-            if stock:
-                security_id = self.get_symbol_security_id(stock)
-                if security_id is None:
-                    return summary
-                pool = pd.DataFrame([{"security_id": security_id, "symbol": stock}])
-            else:
-                pool = self.get_stock_pool(only_main_board=only_main_board)
-                if pool.empty:
-                    return summary
-
+            pool = self._build_ingest_pool(stock, only_main_board=only_main_board)
             summary.stock_count = len(pool)
             pool = pool.copy()
             pool["stock_code"] = pool["symbol"].apply(self._normalize_symbol)
@@ -704,16 +818,7 @@ class TdxQuantIngestionService:
         self.init_tdxquant()
         self.connect_db()
         try:
-            if stock:
-                security_id = self.get_symbol_security_id(stock)
-                if security_id is None:
-                    return summary
-                pool = pd.DataFrame([{"security_id": security_id, "symbol": stock}])
-            else:
-                pool = self.get_stock_pool(only_main_board=only_main_board)
-                if pool.empty:
-                    return summary
-
+            pool = self._build_ingest_pool(stock, only_main_board=only_main_board)
             summary.stock_count = len(pool)
             end_date = datetime.now().strftime("%Y-%m-%d")
             start_date = "1990-01-01"

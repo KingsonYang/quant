@@ -302,7 +302,7 @@ def register(app: typer.Typer) -> None:
         include_all: bool = typer.Option(
             False,
             "--include-all",
-            help="Include non-main-board stocks (default: main board only).",
+            help="除沪深主板外，一并拉取创业板和科创板。默认只拉通达信的上证主板和深证主板。",
         ),
         tqcenter_path: Path | None = typer.Option(
             None,
@@ -380,7 +380,7 @@ def register(app: typer.Typer) -> None:
         include_all: bool = typer.Option(
             False,
             "--include-all",
-            help="Include non-main-board stocks (default: main board only).",
+            help="除沪深主板外，一并拉取创业板和科创板。默认只拉通达信的上证主板和深证主板。",
         ),
         tqcenter_path: Path | None = typer.Option(
             None,
