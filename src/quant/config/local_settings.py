@@ -89,7 +89,7 @@ def missing_tqcenter_message() -> str:
         "请复制 config/local.example.yml 为 config/local.yml，"
         "填写通达信安装目录下的 PYPlugins/user/tqcenter.py；"
         "或设置环境变量 QUANT_TQCENTER_PATH。"
-        "不要指向项目内 scripts/tdx/tqcenter.py，那份副本会按自己的相对位置找 TPythClient.dll。"
+        "该文件必须位于通达信安装目录，因为它会按相对位置加载 TPythClient.dll。"
     )
 
 
